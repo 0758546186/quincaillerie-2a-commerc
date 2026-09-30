@@ -14,31 +14,20 @@ st.set_page_config(
 )
 
 # --- URL DU FICHIER GOOGLE SHEETS ---
-URL_SHEET = "https://docs.google.com/spreadsheets/d/1XVl4h6XZ_-RAZio-ScbbSOwvWXmT3S49vtuKM66EhtM/edit"
+URL_SHEET = "https://docs.google.com/spreadsheets/d/1_-SIVoV08ZeA3fgPkn_qQFn7-EVtTCps/edit"
 
 # Initialisation de la connexion Google Sheets
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 # --- FONCTION DE CHARGEMENT DES DONNÉES DEPUIS GOOGLE SHEETS ---
-@st.cache_data(ttl=2)
+@st.cache_data(ttl=5)
 def charger_donnees():
     try:
-        SHEET_ID = "1XVl4h6XZ_-RAZio-ScbbSOwvWXmT3S49vtuKM66EhtM"
-        url_csv = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Catalogue"
-        
-        df_cat = pd.read_csv(url_csv, skiprows=3)
-        
-        # Nettoyage systématique des noms de colonnes (supprime les espaces superflus)
-        df_cat.columns = df_cat.columns.astype(str).str.strip()
-        
-        # Détection de la colonne désignation pour supprimer les lignes vides
-        col_desig = [c for c in df_cat.columns if "désignation" in c.lower() or "designation" in c.lower()]
-        if col_desig:
-            df_cat = df_cat.dropna(subset=[col_desig[0]])
-            
+        df_cat = conn.read(spreadsheet=URL_SHEET, worksheet="Catalogue", skiprows=3, ttl=0)
+        df_cat = df_cat.dropna(subset=["Désignation"])
         return df_cat
     except Exception as e:
-        st.error(f"Erreur de lecture du tableau : {e}")
+        st.error(f"Erreur lors du chargement de Google Sheets : {e}")
         return pd.DataFrame()
 
 # Chargement initial du dataframe
@@ -291,81 +280,60 @@ with tab1:
         st.subheader("🔎 Recherche au Comptoir")
         mot_cle = st.text_input("Saisissez un nom d'article, marque ou catégorie (ex: Ciment, Tuyau, 110) :")
         
-        if mot_cle and not df.empty:
-            # Nettoyage automatique des espaces invisibles dans les noms de colonnes
-            df.columns = df.columns.astype(str).str.strip()
-
-            # Recherche flexible pour éviter les erreurs de frappe/accents sur les noms de colonnes
-            def trouver_colonne(df, noms_possibles):
-                for nom in noms_possibles:
-                    cols = [c for c in df.columns if nom.lower() in c.lower()]
-                    if cols:
-                        return cols[0]
-                return None
-
-            col_desig = trouver_colonne(df, ["désignation", "designation", "article", "produit"]) or df.columns[0]
-            col_marque = trouver_colonne(df, ["marque"])
-            col_cat = trouver_colonne(df, ["catégorie", "categorie"])
-            col_prix = trouver_colonne(df, ["prix vente", "prix"]) or df.columns[1]
-            col_seuil = trouver_colonne(df, ["seuil", "mini"])
-            col_stock = trouver_colonne(df, ["stock actuel", "stock"]) or df.columns[2]
-            col_statut = trouver_colonne(df, ["statut"])
-
-            # Filtres de recherche
-            mask_desig = df[col_desig].astype(str).str.contains(mot_cle, case=False, na=False)
-            mask_marque = df[col_marque].astype(str).str.contains(mot_cle, case=False, na=False) if col_marque else False
-            mask_cat = df[col_cat].astype(str).str.contains(mot_cle, case=False, na=False) if col_cat else False
+        if mot_cle:
+            mask_desig = df["Désignation"].astype(str).str.contains(mot_cle, case=False, na=False)
+            mask_marque = df["Marque"].astype(str).str.contains(mot_cle, case=False, na=False)
+            mask_cat = df["Catégorie"].astype(str).str.contains(mot_cle, case=False, na=False)
             
             resultat = df[mask_desig | mask_marque | mask_cat]
             
             if not resultat.empty:
                 st.success(f"{len(resultat)} article(s) trouvé(s)")
                 
-                # Assemblage dynamique des colonnes présentables
-                cols_visibles = [c for c in [col_marque, col_desig, col_cat, col_prix, col_seuil, col_stock, col_statut] if c]
-                st.dataframe(resultat[cols_visibles], use_container_width=True)
+                cols_affichage = [
+                    "Marque", "Désignation", "Catégorie", 
+                    "Prix Vente (FCFA)", "Seuil mini de vente", 
+                    "Stock Actuel", "Statut Stock"
+                ]
+                st.dataframe(resultat[cols_affichage], use_container_width=True)
                 
                 st.divider()
                 st.subheader("🛒 Ajouter un produit à la vente")
                 
                 article_choisi = st.selectbox(
                     "Choisissez l'article exact :", 
-                    options=resultat[col_desig].unique()
+                    options=resultat["Désignation"].unique()
                 )
                 
-                row_article = resultat[resultat[col_desig] == article_choisi].iloc[0]
+                row_article = resultat[resultat["Désignation"] == article_choisi].iloc[0]
                 
-                prix_conseille = row_article[col_prix] if pd.notna(row_article[col_prix]) else 0
-                seuil_val = row_article[col_seuil] if col_seuil and pd.notna(row_article[col_seuil]) else "Non défini"
-                stock_val = row_article[col_stock] if pd.notna(row_article[col_stock]) else 0
-
                 st.info(
-                    f"**Prix de vente conseillé :** {prix_conseille:,} FCFA | "
-                    f"**Prix plancher (Seuil mini) :** {seuil_val} FCFA | "
-                    f"**Stock disponible :** {stock_val}"
+                    f"**Prix de vente conseillé :** {row_article['Prix Vente (FCFA)']:,} FCFA | "
+                    f"**Prix plancher (Seuil mini) :** {row_article['Seuil mini de vente'] if pd.notna(row_article['Seuil mini de vente']) else 'Non défini'} FCFA | "
+                    f"**Stock disponible :** {row_article['Stock Actuel']}"
                 )
                 
-                col_qte, col_prix_input, col_btn = st.columns([1, 1, 1])
+                col_qte, col_prix, col_btn = st.columns([1, 1, 1])
                 with col_qte:
                     qte = st.number_input("Quantité :", min_value=1, value=1, step=1)
-                with col_prix_input:
+                with col_prix:
                     prix_applique = st.number_input(
                         "Prix Unitaire Appliqué (FCFA) :", 
-                        value=float(prix_conseille) if pd.notna(prix_conseille) else 0.0
+                        value=float(row_article["Prix Vente (FCFA)"]) if pd.notna(row_article["Prix Vente (FCFA)"]) else 0.0
                     )
                 with col_btn:
                     st.write("")
                     st.write("")
                     if st.button("➕ Ajouter au Panier"):
-                        seuil_mini = row_article[col_seuil] if col_seuil else None
+                        seuil_mini = row_article["Seuil mini de vente"]
                         if pd.notna(seuil_mini) and prix_applique < seuil_mini:
                             st.error(f"❌ Impossible ! Le prix ne peut pas être inférieur au prix plancher de {seuil_mini:,} FCFA.")
-                        elif qte > stock_val:
+                        elif qte > row_article["Stock Actuel"]:
                             st.warning("⚠️ Attention, la quantité demandée dépasse le stock actuel !")
                         else:
                             st.session_state.panier.append({
                                 "Désignation": article_choisi,
-                                "Catégorie": row_article[col_cat] if col_cat else "Général",
+                                "Catégorie": row_article["Catégorie"],
                                 "Quantité": qte,
                                 "Prix Unitaire": int(prix_applique),
                                 "Total": int(qte * prix_applique)
@@ -412,39 +380,41 @@ with tab1:
         else:
             st.info("Le panier est actuellement vide.")
 
-
 # --- ONGLET 2 : ARRIVAGES / ENTRÉES ---
 with tab2:
     st.header("📦 Enregistrement d'un Arrivage (Réapprovisionnement)")
 
-    with st.form("form_reapprovisionnement"):
-        col1, col2 = st.columns(2)
-col1, col2 = st.columns(2)
+    if not df.empty:
+        with st.form("form_reapprovisionnement"):
+            col1, col2 = st.columns(2)
 
-        # Colonne 1
-        col_desig_nom = [c for c in df.columns if "désignation" in c.lower() or "designation" in c.lower()]
-        col_cible = col_desig_nom[0] if col_desig_nom else df.columns[0]
-        liste_produits = df[col_cible].dropna().unique().tolist()
+            # Recherche sécurisée de la colonne Désignation
+            col_desig_nom = [c for c in df.columns if "désignation" in c.lower() or "designation" in c.lower()]
+            col_cible = col_desig_nom[0] if col_desig_nom else df.columns[0]
 
-        with col1:
-            produit_choisi = st.selectbox("Sélectionner l'article reçu", options=liste_produits)
-            qte_recue = st.number_input("Quantité reçue (unités)", min_value=1, step=1, value=1)
+            with col1:
+                liste_produits = df[col_cible].dropna().unique().tolist()
+                produit_choisi = st.selectbox("Sélectionner l'article reçu", options=liste_produits)
+                qte_recue = st.number_input("Quantité reçue (unités)", min_value=1, step=1, value=1)
 
-        with col2:
-            nom_fournisseur = st.text_input("Fournisseur / Origine", value="Fournisseur Divers")
-            prix_achat = st.number_input("Prix d'achat unitaire (FCFA)", min_value=0, step=500, value=0)
+            with col2:
+                nom_fournisseur = st.text_input("Fournisseur / Origine", value="Fournisseur Divers")
+                prix_achat = st.number_input("Prix d'achat unitaire (FCFA)", min_value=0, step=500, value=0)
 
-        if bouton_valider:
-            if produit_choisi:
-                succes = enregistrer_reapprovisionnement_sheets(
-                    produit_choisi, qte_recue, nom_fournisseur, prix_achat
-                )
-                if succes:
-                    st.success(f"Stock de **{produit_choisi}** augmenté de +{qte_recue} unités avec succès !")
-                    st.rerun()
-            else:
-                st.error("Veuillez sélectionner un produit valide.")
+            bouton_valider = st.form_submit_button("✅ Valider l'entrée en stock")
 
+            if bouton_valider:
+                if produit_choisi:
+                    succes = enregistrer_reapprovisionnement_sheets(
+                        produit_choisi, qte_recue, nom_fournisseur, prix_achat
+                    )
+                    if succes:
+                        st.success(f"Stock de **{produit_choisi}** augmenté de +{qte_recue} unités avec succès !")
+                        st.rerun()
+                else:
+                    st.error("Veuillez sélectionner un produit valide.")
+    else:
+        st.error("Le catalogue d'articles est actuellement vide ou inaccessible.")
 
 # --- ONGLET 3 : STOCK & ALERTES ---
 with tab3:
