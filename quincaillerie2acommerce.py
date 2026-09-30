@@ -20,15 +20,14 @@ URL_SHEET = "https://docs.google.com/spreadsheets/d/1XVl4h6XZ_-RAZio-ScbbSOwvWXm
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 # --- FONCTION DE CHARGEMENT DES DONNÉES DEPUIS GOOGLE SHEETS ---
-@st.cache_data(ttl=5)
+@st.cache_data(ttl=2)
 def charger_donnees():
-    try:
-        df_cat = conn.read(spreadsheet=URL_SHEET, worksheet="Catalogue", skiprows=3, ttl=0)
+    SHEET_ID = "1XVl4h6XZ_-RAZio-ScbbSOwvWXmT3S49vtuKM66EhtM"
+    url_csv = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Catalogue"
+    df_cat = pd.read_csv(url_csv, skiprows=3)
+    if "Désignation" in df_cat.columns:
         df_cat = df_cat.dropna(subset=["Désignation"])
-        return df_cat
-    except Exception as e:
-        st.error(f"Erreur lors du chargement de Google Sheets : {e}")
-        return pd.DataFrame()
+    return df_cat
 
 # Chargement initial du dataframe
 df = charger_donnees()
