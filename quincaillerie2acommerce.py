@@ -14,7 +14,8 @@ st.set_page_config(
 )
 
 # --- URL DU FICHIER GOOGLE SHEETS ---
-URL_SHEET = "https://docs.google.com/spreadsheets/d/1_-SIVoV08ZeA3fgPkn_qQFn7-EVtTCps/edit"
+URL_SHEET = "https://docs.google.com/spreadsheets/d/1XVl4h6XZ_-RAZio-ScbbSOwvWXmT3S49vtuKM66EhtM/edit"
+
 
 # Initialisation de la connexion Google Sheets
 conn = st.connection("gsheets", type=GSheetsConnection)
