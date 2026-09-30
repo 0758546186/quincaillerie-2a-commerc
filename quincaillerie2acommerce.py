@@ -18,7 +18,6 @@ URL_SHEET = "https://docs.google.com/spreadsheets/d/1XVl4h6XZ_-RAZio-ScbbSOwvWXm
 
 # Initialisation de la connexion Google Sheets
 conn = st.connection("gsheets", type=GSheetsConnection)
-
 # --- FONCTION DE CHARGEMENT DES DONNÉES DEPUIS GOOGLE SHEETS ---
 @st.cache_data(ttl=2)
 def charger_donnees():
@@ -26,19 +25,41 @@ def charger_donnees():
         SHEET_ID = "1XVl4h6XZ_-RAZio-ScbbSOwvWXmT3S49vtuKM66EhtM"
         url_csv = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Catalogue"
         
-        # skiprows=2 saute 'CATALOGUE & ÉTAT DU STOCK' et la description pour lire directement les vrais en-têtes
-        df_cat = pd.read_csv(url_csv, skiprows=2)
+        # 1. Lecture brute
+        raw_df = pd.read_csv(url_csv, header=None)
         
-        # Nettoyage des espaces invisibles dans les noms de colonnes
+        # 2. Détection dynamique de l'en-tête[cite: 1]
+        header_idx = None
+        for i, row in raw_df.iterrows():
+            row_text = " ".join([str(val).lower() for val in row.fillna('').values])
+            if "désignation" in row_text or "designation" in row_text or "marque" in row_text:
+                header_idx = i
+                break
+                
+        if header_idx is not None:
+            df_cat = pd.read_csv(url_csv, skiprows=header_idx)
+        else:
+            df_cat = pd.read_csv(url_csv, skiprows=2)
+            
+        # 3. Nettoyage des noms de colonnes[cite: 1]
         df_cat.columns = df_cat.columns.astype(str).str.strip()
         
-        # Conversion numérique des colonnes
+        # 4. Suppression des lignes sans désignation[cite: 1]
+        col_desig = [c for c in df_cat.columns if "désignation" in c.lower() or "designation" in c.lower()]
+        if col_desig:
+            df_cat = df_cat.dropna(subset=[col_desig[0]])
+            
+        # 5. Conversion numérique uniquement sur les vraies colonnes de chiffres (en ignorant Statut)[cite: 1]
         for col in df_cat.columns:
-            if any(k in col.lower() for k in ["stock", "prix", "seuil"]):
-                df_cat[col] = pd.to_numeric(
-                    df_cat[col].astype(str).str.replace(r'[^\d.]', '', regex=True), 
-                    errors='coerce'
-                ).fillna(0)
+            col_lower = col.lower()
+            if any(k in col_lower for k in ["stock", "prix", "seuil", "entrées", "sorties"]) and "statut" not in col_lower:
+                val_clean = (
+                    df_cat[col]
+                    .astype(str)
+                    .str.replace(',', '.', regex=False)
+                    .str.replace(r'[^\d.]', '', regex=True)
+                )
+                df_cat[col] = pd.to_numeric(val_clean, errors='coerce').fillna(0)
                 
         return df_cat
     except Exception as e:
@@ -293,8 +314,13 @@ with tab1:
     with col_recherche:
         st.subheader("🔎 Recherche au Comptoir")
         mot_cle = st.text_input("Saisissez un nom d'article, marque ou catégorie (ex: Ciment, Tuyau, 110) :")
+    # --- RECHERCHE AU COMPTOIR SÉCURISÉE ---
+      # --- RECHERCHE ET SELECTION ARTICLE ---
+     # --- RECHERCHE ET SELECTION ARTICLE ---
         if mot_cle and not df.empty:
-            # Détection dynamique et sécurisée des noms de colonnes
+            mot_cle_clean = str(mot_cle).strip().lower()
+
+            # Détection des colonnes
             def trouver_colonne(mots_cles, default_idx=0):
                 for col in df.columns:
                     if any(kw in str(col).lower() for kw in mots_cles):
@@ -305,25 +331,25 @@ with tab1:
             c_marque = trouver_colonne(["marque"])
             c_cat = trouver_colonne(["catégorie", "categorie"])
             c_prix = trouver_colonne(["prix vente", "prix de vente"])
-            c_seuil = trouver_colonne(["seuil mini", "seuil"])
-            c_stock = trouver_colonne(["stock actuel", "stock"])
-            c_statut = trouver_colonne(["statut"])
+            c_seuil_vente = trouver_colonne(["seuil mini de vente", "seuil mini"])
+            c_stock_init = trouver_colonne(["stock initial"])
+            c_stock_actuel = trouver_colonne(["stock actuel"])
+            c_seuil_alerte = trouver_colonne(["seuil alerte"])
+            c_statut = trouver_colonne(["statut stock", "statut"])
 
-            mask_desig = df[c_desig].astype(str).str.contains(mot_cle, case=False, na=False)
-            mask_marque = df[c_marque].astype(str).str.contains(mot_cle, case=False, na=False)
-            mask_cat = df[c_cat].astype(str).str.contains(mot_cle, case=False, na=False)
-            
+            # Filtrage sur le mot-clé
+            mask_desig = df[c_desig].astype(str).str.lower().str.contains(mot_cle_clean, regex=False, na=False)
+            mask_marque = df[c_marque].astype(str).str.lower().str.contains(mot_cle_clean, regex=False, na=False)
+            mask_cat = df[c_cat].astype(str).str.lower().str.contains(mot_cle_clean, regex=False, na=False)
+
             resultat = df[mask_desig | mask_marque | mask_cat]
-            
+
             if not resultat.empty:
                 st.success(f"{len(resultat)} article(s) trouvé(s)")
                 
-               # Déduplication stricte des noms de colonnes
-                cols_brutes = [c for c in [c_marque, c_desig, c_cat, c_prix, c_seuil, c_stock, c_statut] if c in df.columns]
-                
-                # Conserve uniquement les colonnes uniques dans l'ordre
-                cols_affichage = list(dict.fromkeys(cols_brutes))
-                
+                # Tableau récapitulatif
+                cols_brutes = [c_marque, c_desig, c_cat, c_prix, c_stock_init, c_stock_actuel, c_seuil_alerte, c_statut]
+                cols_affichage = list(dict.fromkeys([c for c in cols_brutes if c in df.columns]))
                 st.dataframe(resultat[cols_affichage], use_container_width=True)
                 
                 st.divider()
@@ -333,19 +359,34 @@ with tab1:
                     "Choisissez l'article exact :", 
                     options=resultat[c_desig].unique()
                 )
-                
+
+                # Code metric 
+
                 row_article = resultat[resultat[c_desig] == article_choisi].iloc[0]
                 
                 prix_conseille = row_article[c_prix] if pd.notna(row_article[c_prix]) else 0
-                seuil_val = row_article[c_seuil] if pd.notna(row_article[c_seuil]) else 'Non défini'
-                stock_val = row_article[c_stock] if pd.notna(row_article[c_stock]) else 0
+                prix_plancher = row_article[c_seuil_vente] if pd.notna(row_article[c_seuil_vente]) else 0
+                stock_actuel_val = int(row_article[c_stock_actuel]) if pd.notna(row_article[c_stock_actuel]) else 0
 
-                st.info(
-                    f"**Prix de vente conseillé :** {prix_conseille:,} FCFA | "
-                    f"**Prix plancher (Seuil mini) :** {seuil_val} FCFA | "
-                    f"**Stock disponible :** {stock_val}"
-                )
-                
+                # 📊 AFFICHAGE ÉPURÉ COMPACT SPÉCIAL MOBILE
+                st.markdown(f"""
+                <div style="display: flex; gap: 8px; justify-content: space-between; margin-top: 10px; margin-bottom: 15px; flex-wrap: nowrap;">
+                    <div style="background-color: #e8f4f8; padding: 6px 10px; border-radius: 6px; flex: 1; text-align: center;">
+                        <span style="font-size: 11px; color: #1f77b4; display: block; font-weight: 500;">Prix Conseillé</span>
+                        <strong style="font-size: 13px; color: #0d47a1;">{prix_conseille:,.0f} FCFA</strong>
+                    </div>
+                    <div style="background-color: #fff8e1; padding: 6px 10px; border-radius: 6px; flex: 1; text-align: center;">
+                        <span style="font-size: 11px; color: #b78103; display: block; font-weight: 500;">Prix Plancher Min</span>
+                        <strong style="font-size: 13px; color: #b78103;">{prix_plancher:,.0f} FCFA</strong>
+                    </div>
+                    <div style="background-color: #e8f5e9; padding: 6px 10px; border-radius: 6px; flex: 1; text-align: center;">
+                        <span style="font-size: 11px; color: #2e7d32; display: block; font-weight: 500;">Stock Actuel</span>
+                        <strong style="font-size: 14px; color: #1b5e20;">{stock_actuel_val} pcs</strong>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+                # 🛒 SAISIE DE LA QUANTITÉ ET DU PRIX
                 col_qte, col_prix, col_btn = st.columns([1, 1, 1])
                 with col_qte:
                     qte = st.number_input("Quantité :", min_value=1, value=1, step=1)
@@ -358,11 +399,10 @@ with tab1:
                     st.write("")
                     st.write("")
                     if st.button("➕ Ajouter au Panier"):
-                        seuil_mini = row_article[c_seuil] if pd.notna(row_article[c_seuil]) else None
-                        if seuil_mini is not None and prix_applique < seuil_mini:
-                            st.error(f"❌ Impossible ! Le prix ne peut pas être inférieur au prix plancher de {seuil_mini:,} FCFA.")
-                        elif qte > stock_val:
-                            st.warning("⚠️ Attention, la quantité demandée dépasse le stock actuel !")
+                        if prix_plancher > 0 and prix_applique < prix_plancher:
+                            st.error(f"❌ Prix inférieur au plancher ({prix_plancher:,.0f} FCFA).")
+                        elif qte > stock_actuel_val:
+                            st.warning(f"⚠️️ Stock insuffisant ! Disponible : {stock_actuel_val}")
                         else:
                             st.session_state.panier.append({
                                 "Désignation": article_choisi,
@@ -376,6 +416,7 @@ with tab1:
             else:
                 st.warning(f"Aucun article ne correspond à '{mot_cle}'.")
 
+    # --- PARTIE DROITE : GESTION DU PANIER & VALIDATION DE LA VENTE ---
     with col_panier:
         st.subheader("🛒 Panier en Cours")
         
@@ -400,16 +441,19 @@ with tab1:
                     
                     if succes:
                         pdf_path = generer_recu_pdf(nom_client, st.session_state.panier, total_general)
-                        st.success("🎉 Vente validée et stock mis à jour dans Google Sheets !")
+                        st.success("🎉 Vente validée !")
                         
-                        with open(pdf_path, "rb") as file:
-                            st.download_button(
-                                label="📄 Télécharger le Reçu PDF",
-                                data=file,
-                                file_name=os.path.basename(pdf_path),
-                                mime="application/pdf"
-                            )
+                        if os.path.exists(pdf_path):
+                            with open(pdf_path, "rb") as file:
+                                st.download_button(
+                                    label="📄 Télécharger le Reçu PDF",
+                                    data=file,
+                                    file_name=os.path.basename(pdf_path),
+                                    mime="application/pdf"
+                                )
                         st.session_state.panier = []
+                    else:
+                        st.error("❌ Erreur lors de l'enregistrement de la vente.")
         else:
             st.info("Le panier est actuellement vide.")
 
@@ -453,13 +497,38 @@ with tab2:
 with tab3:
     st.subheader("🚨 Produits en Alerte de Stock (RÉAPPROVISIONNER)")
 
-    if "Statut Stock" in df.columns:
-        df_alertes = df[df["Statut Stock"] == "RÉAPPROVISIONNER"][["Marque", "Désignation", "Catégorie", "Stock Actuel", "Seuil Alerte"]]
+    if not df.empty:
+        # Détection dynamique des colonnes
+        def trouver_colonne(mots_cles, default_idx=0):
+            for col in df.columns:
+                if any(kw in str(col).lower() for kw in mots_cles):
+                    return col
+            return df.columns[default_idx] if len(df.columns) > default_idx else df.columns[0]
+
+        c_statut = trouver_colonne(["statut"])
+        c_marque = trouver_colonne(["marque"])
+        c_desig = trouver_colonne(["désignation", "designation"])
+        c_cat = trouver_colonne(["catégorie", "categorie"])
+        c_stock = trouver_colonne(["stock actuel", "stock"])
+        c_seuil = trouver_colonne(["seuil alerte", "seuil mini", "seuil"])
+
+        # Filtrage souple sur le statut d'alerte
+        mask_alerte = df[c_statut].astype(str).str.contains("RÉAPPROVISIONNER|REAPPROVISIONNER|ALERTE", case=False, na=False)
+        
+        # Sélection des colonnes disponibles sans doublons
+        cols_souhaitees = [c_marque, c_desig, c_cat, c_stock, c_seuil]
+        cols_existantes = [c for c in cols_souhaitees if c in df.columns]
+        cols_uniques = list(dict.fromkeys(cols_existantes))
+        
+        df_alertes = df[mask_alerte][cols_uniques]
+
         if not df_alertes.empty:
             st.warning(f"Il y a actuellement **{len(df_alertes)}** articles nécessitant un réapprovisionnement.")
             st.dataframe(df_alertes, use_container_width=True)
         else:
             st.success("Tous les niveaux de stock sont corrects !")
+    else:
+        st.info("Aucune donnée disponible.")
 
 
 
