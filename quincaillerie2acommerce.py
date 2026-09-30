@@ -13,27 +13,26 @@ st.set_page_config(
     layout="wide"
 )
 
-
+# --- URL DU FICHIER GOOGLE SHEETS ---
+URL_SHEET = URL_SHEET = "https://docs.google.com/spreadsheets/d/1XVI4h6XZ_-RAZio-ScbbSOwvWXmT3S49vtuKM66EhtM/edit"
 # Initialisation de la connexion Google Sheets
 conn = st.connection("gsheets", type=GSheetsConnection)
-
 
 # --- FONCTION DE CHARGEMENT DES DONNÉES DEPUIS GOOGLE SHEETS ---
 @st.cache_data(ttl=5)
 def charger_donnees():
     try:
+        # On extrait l'ID du Google Sheet
         SHEET_ID = "1XVI4h6XZ_-RAZio-ScbbSOwvWXmT3S49vtuKM66EhtM"
         url_csv = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Catalogue"
-
+        
+        # Lecture directe du DataFrame
         df_cat = pd.read_csv(url_csv, skiprows=3)
         df_cat = df_cat.dropna(subset=["Désignation"])
-
         return df_cat
-
     except Exception as e:
         st.error(f"Erreur lors du chargement de Google Sheets : {e}")
         return pd.DataFrame()
-
 # Chargement initial du dataframe
 df = charger_donnees()
 
