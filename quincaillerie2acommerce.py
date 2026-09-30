@@ -279,60 +279,81 @@ with tab1:
         st.subheader("🔎 Recherche au Comptoir")
         mot_cle = st.text_input("Saisissez un nom d'article, marque ou catégorie (ex: Ciment, Tuyau, 110) :")
         
-        if mot_cle:
-            mask_desig = df["Désignation"].astype(str).str.contains(mot_cle, case=False, na=False)
-            mask_marque = df["Marque"].astype(str).str.contains(mot_cle, case=False, na=False)
-            mask_cat = df["Catégorie"].astype(str).str.contains(mot_cle, case=False, na=False)
+        if mot_cle and not df.empty:
+            # Nettoyage automatique des espaces invisibles dans les noms de colonnes
+            df.columns = df.columns.astype(str).str.strip()
+
+            # Recherche flexible pour éviter les erreurs de frappe/accents sur les noms de colonnes
+            def trouver_colonne(df, noms_possibles):
+                for nom in noms_possibles:
+                    cols = [c for c in df.columns if nom.lower() in c.lower()]
+                    if cols:
+                        return cols[0]
+                return None
+
+            col_desig = trouver_colonne(df, ["désignation", "designation", "article", "produit"]) or df.columns[0]
+            col_marque = trouver_colonne(df, ["marque"])
+            col_cat = trouver_colonne(df, ["catégorie", "categorie"])
+            col_prix = trouver_colonne(df, ["prix vente", "prix"]) or df.columns[1]
+            col_seuil = trouver_colonne(df, ["seuil", "mini"])
+            col_stock = trouver_colonne(df, ["stock actuel", "stock"]) or df.columns[2]
+            col_statut = trouver_colonne(df, ["statut"])
+
+            # Filtres de recherche
+            mask_desig = df[col_desig].astype(str).str.contains(mot_cle, case=False, na=False)
+            mask_marque = df[col_marque].astype(str).str.contains(mot_cle, case=False, na=False) if col_marque else False
+            mask_cat = df[col_cat].astype(str).str.contains(mot_cle, case=False, na=False) if col_cat else False
             
             resultat = df[mask_desig | mask_marque | mask_cat]
             
             if not resultat.empty:
                 st.success(f"{len(resultat)} article(s) trouvé(s)")
                 
-                cols_affichage = [
-                    "Marque", "Désignation", "Catégorie", 
-                    "Prix Vente (FCFA)", "Seuil mini de vente", 
-                    "Stock Actuel", "Statut Stock"
-                ]
-                st.dataframe(resultat[cols_affichage], use_container_width=True)
+                # Assemblage dynamique des colonnes présentables
+                cols_visibles = [c for c in [col_marque, col_desig, col_cat, col_prix, col_seuil, col_stock, col_statut] if c]
+                st.dataframe(resultat[cols_visibles], use_container_width=True)
                 
                 st.divider()
                 st.subheader("🛒 Ajouter un produit à la vente")
                 
                 article_choisi = st.selectbox(
                     "Choisissez l'article exact :", 
-                    options=resultat["Désignation"].unique()
+                    options=resultat[col_desig].unique()
                 )
                 
-                row_article = resultat[resultat["Désignation"] == article_choisi].iloc[0]
+                row_article = resultat[resultat[col_desig] == article_choisi].iloc[0]
                 
+                prix_conseille = row_article[col_prix] if pd.notna(row_article[col_prix]) else 0
+                seuil_val = row_article[col_seuil] if col_seuil and pd.notna(row_article[col_seuil]) else "Non défini"
+                stock_val = row_article[col_stock] if pd.notna(row_article[col_stock]) else 0
+
                 st.info(
-                    f"**Prix de vente conseillé :** {row_article['Prix Vente (FCFA)']:,} FCFA | "
-                    f"**Prix plancher (Seuil mini) :** {row_article['Seuil mini de vente'] if pd.notna(row_article['Seuil mini de vente']) else 'Non défini'} FCFA | "
-                    f"**Stock disponible :** {row_article['Stock Actuel']}"
+                    f"**Prix de vente conseillé :** {prix_conseille:,} FCFA | "
+                    f"**Prix plancher (Seuil mini) :** {seuil_val} FCFA | "
+                    f"**Stock disponible :** {stock_val}"
                 )
                 
-                col_qte, col_prix, col_btn = st.columns([1, 1, 1])
+                col_qte, col_prix_input, col_btn = st.columns([1, 1, 1])
                 with col_qte:
                     qte = st.number_input("Quantité :", min_value=1, value=1, step=1)
-                with col_prix:
+                with col_prix_input:
                     prix_applique = st.number_input(
                         "Prix Unitaire Appliqué (FCFA) :", 
-                        value=float(row_article["Prix Vente (FCFA)"]) if pd.notna(row_article["Prix Vente (FCFA)"]) else 0.0
+                        value=float(prix_conseille) if pd.notna(prix_conseille) else 0.0
                     )
                 with col_btn:
                     st.write("")
                     st.write("")
                     if st.button("➕ Ajouter au Panier"):
-                        seuil_mini = row_article["Seuil mini de vente"]
+                        seuil_mini = row_article[col_seuil] if col_seuil else None
                         if pd.notna(seuil_mini) and prix_applique < seuil_mini:
                             st.error(f"❌ Impossible ! Le prix ne peut pas être inférieur au prix plancher de {seuil_mini:,} FCFA.")
-                        elif qte > row_article["Stock Actuel"]:
+                        elif qte > stock_val:
                             st.warning("⚠️ Attention, la quantité demandée dépasse le stock actuel !")
                         else:
                             st.session_state.panier.append({
                                 "Désignation": article_choisi,
-                                "Catégorie": row_article["Catégorie"],
+                                "Catégorie": row_article[col_cat] if col_cat else "Général",
                                 "Quantité": qte,
                                 "Prix Unitaire": int(prix_applique),
                                 "Total": int(qte * prix_applique)
