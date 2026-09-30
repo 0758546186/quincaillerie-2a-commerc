@@ -130,7 +130,7 @@ def generer_recu_pdf(nom_client, panier, total_general):
     pdf.cell(0, 10, "2A-COMMERCE QUINCAILLERIE", ln=True, align="C")
     pdf.set_font("Helvetica", "", 10)
     pdf.cell(0, 6, "Vente de Matériaux de Construction & Outillage", ln=True, align="C")
-    pdf.cell(0, 6, "Abidjan, Côte d'Ivoire", ln=True, align="C")
+    pdf.cell(0, 6, "Angré Château — Abidjan, Côte d’Ivoire", ln=True, align="C")
     pdf.ln(5)
     
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
