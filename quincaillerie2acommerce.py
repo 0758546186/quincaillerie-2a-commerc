@@ -22,12 +22,24 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 # --- FONCTION DE CHARGEMENT DES DONNÉES DEPUIS GOOGLE SHEETS ---
 @st.cache_data(ttl=2)
 def charger_donnees():
-    SHEET_ID = "1XVl4h6XZ_-RAZio-ScbbSOwvWXmT3S49vtuKM66EhtM"
-    url_csv = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Catalogue"
-    df_cat = pd.read_csv(url_csv, skiprows=3)
-    if "Désignation" in df_cat.columns:
-        df_cat = df_cat.dropna(subset=["Désignation"])
-    return df_cat
+    try:
+        SHEET_ID = "1XVl4h6XZ_-RAZio-ScbbSOwvWXmT3S49vtuKM66EhtM"
+        url_csv = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Catalogue"
+        
+        df_cat = pd.read_csv(url_csv, skiprows=3)
+        
+        # Nettoyage systématique des noms de colonnes (supprime les espaces superflus)
+        df_cat.columns = df_cat.columns.astype(str).str.strip()
+        
+        # Détection de la colonne désignation pour supprimer les lignes vides
+        col_desig = [c for c in df_cat.columns if "désignation" in c.lower() or "designation" in c.lower()]
+        if col_desig:
+            df_cat = df_cat.dropna(subset=[col_desig[0]])
+            
+        return df_cat
+    except Exception as e:
+        st.error(f"Erreur de lecture du tableau : {e}")
+        return pd.DataFrame()
 
 # Chargement initial du dataframe
 df = charger_donnees()
@@ -407,9 +419,12 @@ with tab2:
 
     with st.form("form_reapprovisionnement"):
         col1, col2 = st.columns(2)
+with col1:
+            # Recherche de la colonne Désignation de manière sécurisée
+            col_desig_nom = [c for c in df.columns if "désignation" in c.lower() or "designation" in c.lower()]
+            col_cible = col_desig_nom[0] if col_desig_nom else df.columns[0]
 
-        with col1:
-            liste_produits = df["Désignation"].dropna().unique().tolist()
+            liste_produits = df[col_cible].dropna().unique().tolist()
             produit_choisi = st.selectbox("Sélectionner l'article reçu", options=liste_produits)
             qte_recue = st.number_input("Quantité reçue (unités)", min_value=1, step=1, value=1)
 
