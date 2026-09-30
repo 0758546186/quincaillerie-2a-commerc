@@ -10,12 +10,13 @@ st.title("🏗️ 2A-COMMERCE - Gestion de Quincaillerie")
 
 # --- FONCTION DE CHARGEMENT VIA EXPORT CSV GOOGLE SHEETS ---
 # --- FONCTION DE CHARGEMENT VIA EXPORT CSV DIRECT ---
+# --- FONCTION DE CHARGEMENT VIA EXPORT CSV GOOGLE SHEETS ---
 @st.cache_data(ttl=2)
 def charger_donnees():
     try:
-        SHEET_ID = "1XVI4h6XZ_-RAZio-ScbbSOwvWXmT3S49vtuKM66EhtM"
-        # URL d'export CSV directe sur la première feuille
-        url_csv = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid=0"
+        # ID exact avec 'l' minuscule
+        SHEET_ID = "1XVl4h6XZ_-RAZio-ScbbSOwvWXmT3S49vtuKM66EhtM"
+        url_csv = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Catalogue"
         
         df_cat = pd.read_csv(url_csv, skiprows=3)
         if "Désignation" in df_cat.columns:
