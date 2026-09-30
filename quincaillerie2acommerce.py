@@ -23,7 +23,8 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 @st.cache_data(ttl=5)
 def charger_donnees():
     try:
-        df_cat = conn.read(spreadsheet=URL_SHEET, worksheet="Catalogue", skiprows=3, ttl=0)
+        # Utilisation de la connexion configurée dans les Secrets Streamlit Cloud
+        df_cat = conn.read(worksheet="Catalogue", skiprows=3, ttl=0)
         df_cat = df_cat.dropna(subset=["Désignation"])
         return df_cat
     except Exception as e:
