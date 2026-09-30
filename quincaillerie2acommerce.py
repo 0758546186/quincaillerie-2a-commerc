@@ -419,20 +419,20 @@ with tab2:
 
     with st.form("form_reapprovisionnement"):
         col1, col2 = st.columns(2)
-with col1:
-            # Recherche de la colonne Désignation de manière sécurisée
-            col_desig_nom = [c for c in df.columns if "désignation" in c.lower() or "designation" in c.lower()]
-            col_cible = col_desig_nom[0] if col_desig_nom else df.columns[0]
+col1, col2 = st.columns(2)
 
-            liste_produits = df[col_cible].dropna().unique().tolist()
+        # Colonne 1
+        col_desig_nom = [c for c in df.columns if "désignation" in c.lower() or "designation" in c.lower()]
+        col_cible = col_desig_nom[0] if col_desig_nom else df.columns[0]
+        liste_produits = df[col_cible].dropna().unique().tolist()
+
+        with col1:
             produit_choisi = st.selectbox("Sélectionner l'article reçu", options=liste_produits)
             qte_recue = st.number_input("Quantité reçue (unités)", min_value=1, step=1, value=1)
 
         with col2:
             nom_fournisseur = st.text_input("Fournisseur / Origine", value="Fournisseur Divers")
             prix_achat = st.number_input("Prix d'achat unitaire (FCFA)", min_value=0, step=500, value=0)
-
-        bouton_valider = st.form_submit_button("✅ Valider l'entrée en stock")
 
         if bouton_valider:
             if produit_choisi:
