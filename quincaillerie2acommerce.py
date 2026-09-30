@@ -20,11 +20,16 @@ URL_SHEET = "https://docs.google.com/spreadsheets/d/1XVI4h6XZ_-RAZio-ScbbSOwvWXm
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 # --- FONCTION DE CHARGEMENT DES DONNÉES DEPUIS GOOGLE SHEETS ---
+# --- FONCTION DE CHARGEMENT DES DONNÉES DEPUIS GOOGLE SHEETS ---
 @st.cache_data(ttl=5)
 def charger_donnees():
     try:
-        # Utilisation de la connexion configurée dans les Secrets Streamlit Cloud
-        df_cat = conn.read(worksheet="Catalogue", skiprows=3, ttl=0)
+        # On extrait l'ID du Google Sheet
+        SHEET_ID = "1XVI4h6XZ_-RAZio-ScbbSOwvWXmT3S49vtuKM66EhtM"
+        url_csv = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Catalogue"
+        
+        # Lecture directe du DataFrame
+        df_cat = pd.read_csv(url_csv, skiprows=3)
         df_cat = df_cat.dropna(subset=["Désignation"])
         return df_cat
     except Exception as e:
