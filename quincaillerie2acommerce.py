@@ -16,7 +16,6 @@ st.set_page_config(
 # --- URL DU FICHIER GOOGLE SHEETS ---
 URL_SHEET = "https://docs.google.com/spreadsheets/d/1XVl4h6XZ_-RAZio-ScbbSOwvWXmT3S49vtuKM66EhtM/edit"
 
-
 # Initialisation de la connexion Google Sheets
 conn = st.connection("gsheets", type=GSheetsConnection)
 
@@ -27,16 +26,20 @@ def charger_donnees():
         SHEET_ID = "1XVl4h6XZ_-RAZio-ScbbSOwvWXmT3S49vtuKM66EhtM"
         url_csv = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Catalogue"
         
-        df_cat = pd.read_csv(url_csv, skiprows=3)
+        # skiprows=2 saute 'CATALOGUE & ÉTAT DU STOCK' et la description pour lire directement les vrais en-têtes
+        df_cat = pd.read_csv(url_csv, skiprows=2)
         
-        # Nettoyage automatique des noms de colonnes (supprime les espaces invisibles)
+        # Nettoyage des espaces invisibles dans les noms de colonnes
         df_cat.columns = df_cat.columns.astype(str).str.strip()
         
-        # Détection de la colonne désignation pour supprimer les lignes vides
-        col_desig = [c for c in df_cat.columns if "désignation" in c.lower() or "designation" in c.lower()]
-        if col_desig:
-            df_cat = df_cat.dropna(subset=[col_desig[0]])
-            
+        # Conversion numérique des colonnes
+        for col in df_cat.columns:
+            if any(k in col.lower() for k in ["stock", "prix", "seuil"]):
+                df_cat[col] = pd.to_numeric(
+                    df_cat[col].astype(str).str.replace(r'[^\d.]', '', regex=True), 
+                    errors='coerce'
+                ).fillna(0)
+                
         return df_cat
     except Exception as e:
         st.error(f"Erreur lors du chargement de Google Sheets : {e}")
@@ -290,22 +293,37 @@ with tab1:
     with col_recherche:
         st.subheader("🔎 Recherche au Comptoir")
         mot_cle = st.text_input("Saisissez un nom d'article, marque ou catégorie (ex: Ciment, Tuyau, 110) :")
-        
-        if mot_cle:
-            mask_desig = df["Désignation"].astype(str).str.contains(mot_cle, case=False, na=False)
-            mask_marque = df["Marque"].astype(str).str.contains(mot_cle, case=False, na=False)
-            mask_cat = df["Catégorie"].astype(str).str.contains(mot_cle, case=False, na=False)
+        if mot_cle and not df.empty:
+            # Détection dynamique et sécurisée des noms de colonnes
+            def trouver_colonne(mots_cles, default_idx=0):
+                for col in df.columns:
+                    if any(kw in str(col).lower() for kw in mots_cles):
+                        return col
+                return df.columns[default_idx] if len(df.columns) > default_idx else df.columns[0]
+
+            c_desig = trouver_colonne(["désignation", "designation"])
+            c_marque = trouver_colonne(["marque"])
+            c_cat = trouver_colonne(["catégorie", "categorie"])
+            c_prix = trouver_colonne(["prix vente", "prix de vente"])
+            c_seuil = trouver_colonne(["seuil mini", "seuil"])
+            c_stock = trouver_colonne(["stock actuel", "stock"])
+            c_statut = trouver_colonne(["statut"])
+
+            mask_desig = df[c_desig].astype(str).str.contains(mot_cle, case=False, na=False)
+            mask_marque = df[c_marque].astype(str).str.contains(mot_cle, case=False, na=False)
+            mask_cat = df[c_cat].astype(str).str.contains(mot_cle, case=False, na=False)
             
             resultat = df[mask_desig | mask_marque | mask_cat]
             
             if not resultat.empty:
                 st.success(f"{len(resultat)} article(s) trouvé(s)")
                 
-                cols_affichage = [
-                    "Marque", "Désignation", "Catégorie", 
-                    "Prix Vente (FCFA)", "Seuil mini de vente", 
-                    "Stock Actuel", "Statut Stock"
-                ]
+               # Déduplication stricte des noms de colonnes
+                cols_brutes = [c for c in [c_marque, c_desig, c_cat, c_prix, c_seuil, c_stock, c_statut] if c in df.columns]
+                
+                # Conserve uniquement les colonnes uniques dans l'ordre
+                cols_affichage = list(dict.fromkeys(cols_brutes))
+                
                 st.dataframe(resultat[cols_affichage], use_container_width=True)
                 
                 st.divider()
@@ -313,15 +331,19 @@ with tab1:
                 
                 article_choisi = st.selectbox(
                     "Choisissez l'article exact :", 
-                    options=resultat["Désignation"].unique()
+                    options=resultat[c_desig].unique()
                 )
                 
-                row_article = resultat[resultat["Désignation"] == article_choisi].iloc[0]
+                row_article = resultat[resultat[c_desig] == article_choisi].iloc[0]
                 
+                prix_conseille = row_article[c_prix] if pd.notna(row_article[c_prix]) else 0
+                seuil_val = row_article[c_seuil] if pd.notna(row_article[c_seuil]) else 'Non défini'
+                stock_val = row_article[c_stock] if pd.notna(row_article[c_stock]) else 0
+
                 st.info(
-                    f"**Prix de vente conseillé :** {row_article['Prix Vente (FCFA)']:,} FCFA | "
-                    f"**Prix plancher (Seuil mini) :** {row_article['Seuil mini de vente'] if pd.notna(row_article['Seuil mini de vente']) else 'Non défini'} FCFA | "
-                    f"**Stock disponible :** {row_article['Stock Actuel']}"
+                    f"**Prix de vente conseillé :** {prix_conseille:,} FCFA | "
+                    f"**Prix plancher (Seuil mini) :** {seuil_val} FCFA | "
+                    f"**Stock disponible :** {stock_val}"
                 )
                 
                 col_qte, col_prix, col_btn = st.columns([1, 1, 1])
@@ -330,21 +352,21 @@ with tab1:
                 with col_prix:
                     prix_applique = st.number_input(
                         "Prix Unitaire Appliqué (FCFA) :", 
-                        value=float(row_article["Prix Vente (FCFA)"]) if pd.notna(row_article["Prix Vente (FCFA)"]) else 0.0
+                        value=float(prix_conseille) if pd.notna(prix_conseille) else 0.0
                     )
                 with col_btn:
                     st.write("")
                     st.write("")
                     if st.button("➕ Ajouter au Panier"):
-                        seuil_mini = row_article["Seuil mini de vente"]
-                        if pd.notna(seuil_mini) and prix_applique < seuil_mini:
+                        seuil_mini = row_article[c_seuil] if pd.notna(row_article[c_seuil]) else None
+                        if seuil_mini is not None and prix_applique < seuil_mini:
                             st.error(f"❌ Impossible ! Le prix ne peut pas être inférieur au prix plancher de {seuil_mini:,} FCFA.")
-                        elif qte > row_article["Stock Actuel"]:
+                        elif qte > stock_val:
                             st.warning("⚠️ Attention, la quantité demandée dépasse le stock actuel !")
                         else:
                             st.session_state.panier.append({
                                 "Désignation": article_choisi,
-                                "Catégorie": row_article["Catégorie"],
+                                "Catégorie": row_article[c_cat] if pd.notna(row_article[c_cat]) else "",
                                 "Quantité": qte,
                                 "Prix Unitaire": int(prix_applique),
                                 "Total": int(qte * prix_applique)
@@ -438,3 +460,6 @@ with tab3:
             st.dataframe(df_alertes, use_container_width=True)
         else:
             st.success("Tous les niveaux de stock sont corrects !")
+
+
+
