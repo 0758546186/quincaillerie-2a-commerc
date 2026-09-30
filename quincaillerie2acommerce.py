@@ -19,7 +19,7 @@ URL_SHEET = "https://docs.google.com/spreadsheets/d/1XVI4h6XZ_-RAZio-ScbbSOwvWXm
 # Initialisation de la connexion Google Sheets
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# --- FONCTION DE CHARGEMENT DES DONNÉES DEPUIS GOOGLE SHEETS ---
+
 # --- FONCTION DE CHARGEMENT DES DONNÉES DEPUIS GOOGLE SHEETS ---
 @st.cache_data(ttl=5)
 def charger_donnees():
