@@ -22,20 +22,21 @@ st.set_page_config(
 URL_SHEET = "https://docs.google.com/spreadsheets/d/1XVl4h6XZ_-RAZio-ScbbSOwvWXmT3S49vtuKM66EhtM/edit"
 
 # Initialisation de la connexion Google Sheets
-# Récupération automatique et sécurisée du JSON
-if "json_key" in st.secrets:
-    raw_json = st.secrets["json_key"]
-elif "gcp_service_account" in st.secrets and "json_key" in st.secrets["gcp_service_account"]:
-    raw_json = st.secrets["gcp_service_account"]["json_key"]
-else:
-    st.error("La clé 'json_key' est introuvable dans les Secrets Streamlit Cloud.")
-    st.stop()
+# Charger les secrets sous forme de dictionnaire nativement
+service_account_info = dict(st.secrets["gcp_service_account"])
 
-# Nettoyage de la chaîne JSON
-cleaned_json = raw_json.strip().replace('\\n', '\n')
-service_account_info = json.loads(cleaned_json)
+# Initialiser la connexion Google Sheets
+conn = st.connection(
+    "gsheets",
+    type=GSheetsConnection,
+    service_account_info=service_account_info
+)
 
-# Connexion à Google Sheets avec la connexion native Streamlit
+# Initialisation de la connexion Google Sheets
+# Charger les secrets sous forme de dictionnaire nativement
+service_account_info = dict(st.secrets["gcp_service_account"])
+
+# Initialiser la connexion Google Sheets
 conn = st.connection(
     "gsheets",
     type=GSheetsConnection,
