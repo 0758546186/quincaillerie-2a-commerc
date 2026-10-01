@@ -4,9 +4,12 @@ import urllib.parse
 from datetime import datetime
 import os
 from fpdf import FPDF
+import json
 from streamlit_gsheets import GSheetsConnection
 import gspread
 from google.oauth2.service_account import Credentials
+
+
 
 # --- CONFIGURATION DE LA PAGE STREAMLIT ---
 st.set_page_config(
@@ -19,9 +22,17 @@ st.set_page_config(
 URL_SHEET = "https://docs.google.com/spreadsheets/d/1XVl4h6XZ_-RAZio-ScbbSOwvWXmT3S49vtuKM66EhtM/edit"
 
 # Initialisation de la connexion Google Sheets
-conn = st.connection("gsheets", type=GSheetsConnection)
+# Récupération des secrets JSON
+service_account_info = json.loads(st.secrets["json_key"])
 
-# --- FONCTION DE CHARGEMENT DES DONNÉES DEPUIS GOOGLE SHEETS ---
+# Connexion à Google Sheets avec la connexion native Streamlit
+conn = st.connection(
+    "gsheets",
+    type=GSheetsConnection,
+    service_account_info=service_account_info
+)
+
+
 # --- FONCTION DE CHARGEMENT DES DONNÉES DEPUIS GOOGLE SHEETS ---
 @st.cache_data(ttl=60)
 def charger_donnees():
