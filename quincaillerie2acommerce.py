@@ -5,6 +5,8 @@ from datetime import datetime
 import os
 from fpdf import FPDF
 from streamlit_gsheets import GSheetsConnection
+import gspread
+from google.oauth2.service_account import Credentials
 
 # --- CONFIGURATION DE LA PAGE STREAMLIT ---
 st.set_page_config(
@@ -18,69 +20,125 @@ URL_SHEET = "https://docs.google.com/spreadsheets/d/1XVl4h6XZ_-RAZio-ScbbSOwvWXm
 
 # Initialisation de la connexion Google Sheets
 conn = st.connection("gsheets", type=GSheetsConnection)
+
 # --- FONCTION DE CHARGEMENT DES DONNÉES DEPUIS GOOGLE SHEETS ---
-@st.cache_data(ttl=2)
+# --- FONCTION DE CHARGEMENT DES DONNÉES DEPUIS GOOGLE SHEETS ---
+@st.cache_data(ttl=60)
 def charger_donnees():
     try:
+        # TENTATIVE 1 : Utilisation de gspread si les secrets sont configurés
+        if "gcp_service_account" in st.secrets:
+            client = obtenir_connexion_gsheets()
+            SHEET_ID = "1XVl4h6XZ_-RAZio-ScbbSOwvWXmT3S49vtuKM66EhtM"
+            sheet = client.open_by_key(SHEET_ID).worksheet("Catalogue")
+            records = sheet.get_all_records()
+            df = pd.DataFrame(records)
+            df.columns = df.columns.str.strip()
+            return df
+    except Exception:
+        pass
+
+    # TENTATIVE 2 : Lien d'accès direct Google Viz (plus stable que /export?format=csv)
+    try:
         SHEET_ID = "1XVl4h6XZ_-RAZio-ScbbSOwvWXmT3S49vtuKM66EhtM"
-        url_csv = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Catalogue"
-        
-        # 1. Lecture brute
-        raw_df = pd.read_csv(url_csv, header=None)
-        
-        # 2. Détection dynamique de l'en-tête[cite: 1]
-        header_idx = None
-        for i, row in raw_df.iterrows():
-            row_text = " ".join([str(val).lower() for val in row.fillna('').values])
-            if "désignation" in row_text or "designation" in row_text or "marque" in row_text:
-                header_idx = i
-                break
-                
-        if header_idx is not None:
-            df_cat = pd.read_csv(url_csv, skiprows=header_idx)
-        else:
-            df_cat = pd.read_csv(url_csv, skiprows=2)
-            
-        # 3. Nettoyage des noms de colonnes[cite: 1]
-        df_cat.columns = df_cat.columns.astype(str).str.strip()
-        
-        # 4. Suppression des lignes sans désignation[cite: 1]
-        col_desig = [c for c in df_cat.columns if "désignation" in c.lower() or "designation" in c.lower()]
-        if col_desig:
-            df_cat = df_cat.dropna(subset=[col_desig[0]])
-            
-        # 5. Conversion numérique uniquement sur les vraies colonnes de chiffres (en ignorant Statut)[cite: 1]
-        for col in df_cat.columns:
-            col_lower = col.lower()
-            if any(k in col_lower for k in ["stock", "prix", "seuil", "entrées", "sorties"]) and "statut" not in col_lower:
-                val_clean = (
-                    df_cat[col]
-                    .astype(str)
-                    .str.replace(',', '.', regex=False)
-                    .str.replace(r'[^\d.]', '', regex=True)
-                )
-                df_cat[col] = pd.to_numeric(val_clean, errors='coerce').fillna(0)
-                
-        return df_cat
+        url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Catalogue"
+        df = pd.read_csv(url)
+        df.columns = df.columns.str.strip()
+        return df
     except Exception as e:
-        st.error(f"Erreur lors du chargement de Google Sheets : {e}")
-        return pd.DataFrame()
-# Chargement initial du dataframe
+        st.error(f"Erreur lors du chargement des données : {e}")
+        return None
+
+
+# --- CONNEXION SÉCURISÉE À GOOGLE SHEETS VIA STREAMLIT SECRETS ---
+@st.cache_resource
+def obtenir_connexion_gsheets():
+    scope = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive"
+    ]
+    creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scope)
+    client = gspread.authorize(creds)
+    return client
+
+
+# --- FONCTION DE MISE À JOUR DU STOCK DANS GOOGLE SHEETS ---
+def mettre_a_jour_stock_gsheet(panier, mode="vente"):
+    try:
+        client = obtenir_connexion_gsheets()
+        SHEET_ID = "1XVl4h6XZ_-RAZio-ScbbSOwvWXmT3S49vtuKM66EhtM"
+        sheet = client.open_by_key(SHEET_ID).worksheet("Catalogue")
+        
+        donnees = sheet.get_all_values()
+        
+        header_idx = None
+        headers = []
+        for i, row in enumerate(donnees):
+            row_text = " ".join([str(v).lower() for v in row])
+            if "désignation" in row_text or "designation" in row_text:
+                header_idx = i
+                headers = [str(h).strip().lower() for h in row]
+                break
+
+        if header_idx is None:
+            return False, "En-tête non trouvé dans le Sheet."
+
+        idx_desig = next((i for i, h in enumerate(headers) if "désignation" in h or "designation" in h), None)
+        idx_stock = next((i for i, h in enumerate(headers) if "stock actuel" in h or "stock" in h), None)
+
+        if idx_desig is None or idx_stock is None:
+            return False, "Colonnes introuvables."
+
+        for item in panier:
+            nom_article = item["Désignation"]
+            qte = item["Quantité"]
+
+            for row_num in range(header_idx + 1, len(donnees)):
+                if donnees[row_num][idx_desig].strip().lower() == nom_article.strip().lower():
+                    try:
+                        val_actuelle = float(donnees[row_num][idx_stock].replace(',', '.'))
+                    except ValueError:
+                        val_actuelle = 0.0
+
+                    if mode == "vente":
+                        nouveau_stock = max(0, int(val_actuelle - qte))
+                    else:
+                        nouveau_stock = int(val_actuelle + qte)
+
+                    sheet.update_cell(row_num + 1, idx_stock + 1, nouveau_stock)
+                    break
+
+        st.cache_data.clear()
+        return True, "Stock mis à jour avec succès !"
+
+    except Exception as e:
+        return False, f"Erreur Google Sheets : {e}"
+
+
+# --- CHARGEMENT INITIAL DU DATAFRAME ---
 df = charger_donnees()
+# Chargement initial du dataframe
+df_initial = charger_donnees()
+df = df_initial if df_initial is not None else pd.DataFrame()
+
 
 # --- BLOC ALERTE STOCK & WHATSAPP (BARRE LATÉRALE) ---
 CONTACTS = {"Destinataire 1": "2250102996002", "Destinataire 2": "2250707066335"}
 seuil_minimum = 5
 
 if not df.empty and "Stock Actuel" in df.columns:
-    stock_critique = df[df["Stock Actuel"] <= seuil_minimum]
+    # Convertir la colonne Stock Actuel en nombre (remplace les erreurs/textes par 0)
+    df["Stock Actuel Num"] = pd.to_numeric(df["Stock Actuel"].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
+    
+    # Filtrer les stocks critiques avec la version numérique
+    stock_critique = df[df["Stock Actuel Num"] <= seuil_minimum]
 
     if not stock_critique.empty:
         st.sidebar.error(f"🚨 **ALERTE LE STOCK A ATTEINT LE SEUIL MINIMUM ({len(stock_critique)})**")
 
         liste_produits = ""
         for _, row in stock_critique.iterrows():
-            liste_produits += f"• {row['Désignation']} (Reste : {int(row['Stock Actuel'])})\n"
+            liste_produits += f"• {row['Désignation']} (Reste : {int(row['Stock Actuel Num'])})\n"
 
         message = (
             "Salut ! Voici la liste des produits arrivés au seuil critique"
@@ -368,16 +426,29 @@ with tab1:
                 prix_plancher = row_article[c_seuil_vente] if pd.notna(row_article[c_seuil_vente]) else 0
                 stock_actuel_val = int(row_article[c_stock_actuel]) if pd.notna(row_article[c_stock_actuel]) else 0
 
+               # Conversion sécurisée des prix
+                try:
+                    p_cons_num = float(str(prix_conseille).replace(' ', '').replace(',', '.'))
+                    txt_prix_conseille = f"{p_cons_num:,.0f}".replace(',', ' ')
+                except (ValueError, TypeError):
+                    txt_prix_conseille = str(prix_conseille)
+
+                try:
+                    p_plan_num = float(str(prix_plancher).replace(' ', '').replace(',', '.'))
+                    txt_prix_plancher = f"{p_plan_num:,.0f}".replace(',', ' ')
+                except (ValueError, TypeError):
+                    txt_prix_plancher = str(prix_plancher)
+
                 # 📊 AFFICHAGE ÉPURÉ COMPACT SPÉCIAL MOBILE
                 st.markdown(f"""
                 <div style="display: flex; gap: 8px; justify-content: space-between; margin-top: 10px; margin-bottom: 15px; flex-wrap: nowrap;">
                     <div style="background-color: #e8f4f8; padding: 6px 10px; border-radius: 6px; flex: 1; text-align: center;">
                         <span style="font-size: 11px; color: #1f77b4; display: block; font-weight: 500;">Prix Conseillé</span>
-                        <strong style="font-size: 13px; color: #0d47a1;">{prix_conseille:,.0f} FCFA</strong>
+                        <strong style="font-size: 13px; color: #0d47a1;">{txt_prix_conseille} FCFA</strong>
                     </div>
                     <div style="background-color: #fff8e1; padding: 6px 10px; border-radius: 6px; flex: 1; text-align: center;">
                         <span style="font-size: 11px; color: #b78103; display: block; font-weight: 500;">Prix Plancher Min</span>
-                        <strong style="font-size: 13px; color: #b78103;">{prix_plancher:,.0f} FCFA</strong>
+                        <strong style="font-size: 13px; color: #b78103;">{txt_prix_plancher} </strong>
                     </div>
                     <div style="background-color: #e8f5e9; padding: 6px 10px; border-radius: 6px; flex: 1; text-align: center;">
                         <span style="font-size: 11px; color: #2e7d32; display: block; font-weight: 500;">Stock Actuel</span>
@@ -386,23 +457,41 @@ with tab1:
                 </div>
                 """, unsafe_allow_html=True)
 
-                # 🛒 SAISIE DE LA QUANTITÉ ET DU PRIX
+             # 🛒 SAISIE DE LA QUANTITÉ ET DU PRIX
                 col_qte, col_prix, col_btn = st.columns([1, 1, 1])
+                
                 with col_qte:
                     qte = st.number_input("Quantité :", min_value=1, value=1, step=1)
+                
                 with col_prix:
+                    # Nettoyage sécurisé pour extraire uniquement la valeur numérique
+                    if pd.notna(prix_conseille):
+                        val_clean = "".join(c for c in str(prix_conseille) if c.isdigit() or c in ['.', ',']).replace(',', '.')
+                        prix_valeur_num = float(val_clean) if val_clean else 0.0
+                    else:
+                        prix_valeur_num = 0.0
+
                     prix_applique = st.number_input(
                         "Prix Unitaire Appliqué (FCFA) :", 
-                        value=float(prix_conseille) if pd.notna(prix_conseille) else 0.0
+                        value=prix_valeur_num
                     )
+
+                # Nettoyage et conversion du prix plancher
+                try:
+                    val_plan_clean = "".join(c for c in str(prix_plancher) if c.isdigit() or c in ['.', ',']).replace(',', '.')
+                    prix_plancher_num = float(val_plan_clean) if val_plan_clean else 0.0
+                except (ValueError, TypeError):
+                    prix_plancher_num = 0.0
+
+                # AJOUT DE LA COLONNE BOUTON QUI MANQUAIT
                 with col_btn:
+                    st.write("") # Espacement pour aligner verticalement avec les champs
                     st.write("")
-                    st.write("")
-                    if st.button("➕ Ajouter au Panier"):
-                        if prix_plancher > 0 and prix_applique < prix_plancher:
-                            st.error(f"❌ Prix inférieur au plancher ({prix_plancher:,.0f} FCFA).")
+                    if st.button("➕ Ajouter au Panier", use_container_width=True):
+                        if prix_plancher_num > 0 and prix_applique < prix_plancher_num:
+                            st.error(f"❌ Prix inférieur au plancher ({prix_plancher_num:,.0f} FCFA).")
                         elif qte > stock_actuel_val:
-                            st.warning(f"⚠️️ Stock insuffisant ! Disponible : {stock_actuel_val}")
+                            st.warning(f"⚠️ Stock insuffisant ! Disponible : {stock_actuel_val}")
                         else:
                             st.session_state.panier.append({
                                 "Désignation": article_choisi,
@@ -413,8 +502,7 @@ with tab1:
                             })
                             st.success("Article ajouté au panier !")
                             st.rerun()
-            else:
-                st.warning(f"Aucun article ne correspond à '{mot_cle}'.")
+
 
     # --- PARTIE DROITE : GESTION DU PANIER & VALIDATION DE LA VENTE ---
     with col_panier:
@@ -437,11 +525,12 @@ with tab1:
                 
             with col_v2:
                 if st.button("✅ Valider la Vente", type="primary"):
-                    succes = enregistrer_vente_excel(st.session_state.panier, nom_client)
+                    with st.spinner("Mise à jour du Google Sheet en cours..."):
+                        succes, msg = mettre_a_jour_stock_gsheet(st.session_state.panier, mode="vente")
                     
                     if succes:
                         pdf_path = generer_recu_pdf(nom_client, st.session_state.panier, total_general)
-                        st.success("🎉 Vente validée !")
+                        st.success("🎉 Vente enregistrée et Stock mis à jour dans Google Sheets !")
                         
                         if os.path.exists(pdf_path):
                             with open(pdf_path, "rb") as file:
@@ -453,9 +542,7 @@ with tab1:
                                 )
                         st.session_state.panier = []
                     else:
-                        st.error("❌ Erreur lors de l'enregistrement de la vente.")
-        else:
-            st.info("Le panier est actuellement vide.")
+                        st.error(f"❌ Erreur : {msg}")
 
 # --- ONGLET 2 : ARRIVAGES / ENTRÉES ---
 with tab2:
