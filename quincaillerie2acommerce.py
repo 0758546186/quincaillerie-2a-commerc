@@ -23,7 +23,7 @@ URL_SHEET = "https://docs.google.com/spreadsheets/d/1XVl4h6XZ_-RAZio-ScbbSOwvWXm
 
 # Initialisation de la connexion Google Sheets
 # Récupération des secrets JSON
-service_account_info = json.loads(st.secrets["json_key"])
+service_account_info = json.loads(st.secrets["gcp_service_account"]["json_key"])
 
 # Connexion à Google Sheets avec la connexion native Streamlit
 conn = st.connection(
