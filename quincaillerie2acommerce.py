@@ -22,8 +22,24 @@ st.set_page_config(
 URL_SHEET = "https://docs.google.com/spreadsheets/d/1XVl4h6XZ_-RAZio-ScbbSOwvWXmT3S49vtuKM66EhtM/edit"
 
 # Initialisation de la connexion Google Sheets
-# Charger les secrets sous forme de dictionnaire nativement
-service_account_info = dict(st.secrets["gcp_service_account"])
+# 1. On extrait le dictionnaire GCP depuis les secrets Streamlit
+gcp_secrets = dict(st.secrets["gcp_service_account"])
+
+# 2. Convertir proprement le contenu de json_key
+if "json_key" in gcp_secrets:
+    if isinstance(gcp_secrets["json_key"], str):
+        service_account_info = json.loads(gcp_secrets["json_key"])
+    else:
+        service_account_info = dict(gcp_secrets["json_key"])
+else:
+    service_account_info = gcp_secrets
+
+# 3. Connexion à Google Sheets via st.connection
+conn = st.connection(
+    "gsheets",
+    type=GSheetsConnection,
+    service_account_info=service_account_info
+)
 
 # Initialiser la connexion Google Sheets
 conn = st.connection(
