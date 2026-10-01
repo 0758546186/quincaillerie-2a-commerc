@@ -2,3 +2,5 @@ streamlit
 pandas
 fpdf
 st-gsheets-connection
+gspread
+google-auth
