@@ -383,28 +383,29 @@ def enregistrer_reapprovisionnement_sheets(desig, qte_recue, nom_fournisseur, pr
         if maj:
             ws_cat.batch_update(maj, value_input_option="USER_ENTERED")
 
-        # 4. Enregistrement dans l'onglet Mouvements (ajout en bas)
+   # 4. Enregistrement dans l'onglet Mouvements (ajout propre en bas, colonnes A à H)
         try:
             ws_mouv = classeur.worksheet("Mouvements")
-            val_m = ws_mouv.get_all_values()
-            hm = _trouver_entete(val_m, ["date", "type"])
-            if hm is None:
-                raise ValueError("En-tête de l'onglet Mouvements introuvable.")
-            entetes_m = [str(x).strip().lower() for x in val_m[hm]]
 
             code_art = ligne[i_code] if i_code is not None and ligne[i_code] else f"ART-{str(desig)[:3].upper()}"
-            donnees = {
-                "date": datetime.now().strftime("%Y-%m-%d"),
-                "type mouvement": "Entrée",
-                "code article": code_art,
-                "désignation": str(desig),
-                "catégorie": str(desig),
-                "quantité": int(qte_recue),
-                "prix unitaire (fcfa)": prix_u,
-                "total fcfa": int(qte_recue) * prix_u,
-                "client / fournisseur": nom_fournisseur,
-            }
-            ws_mouv.append_row([donnees.get(e, "") for e in entetes_m], value_input_option="USER_ENTERED")
+            date_jour = datetime.now().strftime("%d/%m/%Y")
+            total_fcfa = int(qte_recue) * prix_u
+
+            # Alignement strict de la colonne A jusqu'à la colonne H
+            nouvelle_ligne = [
+                date_jour,                              # Col A: Date
+                "Entrée",                               # Col B: Type Mouvement
+                code_art,                               # Col C: Code Article
+                str(desig),                             # Col D: Désignation
+                int(qte_recue),                         # Col E: Quantité
+                f"{int(prix_u)} FCFA",                  # Col F: Prix Unitaire
+                f"{int(total_fcfa)} FCFA",               # Col G: Total FCFA
+                nom_fournisseur                         # Col H: Client / Fournisseur
+            ]
+
+            # Écriture directe sous la dernière ligne remplie
+            ws_mouv.append_row(nouvelle_ligne, value_input_option="USER_ENTERED")
+
         except Exception as e_mouv:
             st.warning(f"Stock Catalogue mis à jour, mais enregistrement Mouvements ignoré : {e_mouv}")
 
