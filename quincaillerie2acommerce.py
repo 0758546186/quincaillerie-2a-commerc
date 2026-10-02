@@ -261,26 +261,41 @@ def generer_recu_pdf(nom_client, panier, total_general):
 # --- FONCTION DE MISE À JOUR DU STOCK (VENTE) ---
 def enregistrer_vente_excel(panier, nom_client):
     try:
-        # Lecture du catalogue avec conversion automatique du texte en chiffres
-        df_cat = conn.read(spreadsheet=URL_SHEET, worksheet="Catalogue", skiprows=3, ttl=0)
+        # 1. Lecture du Catalogue (ligne 3 des entêtes)
+        df_cat = conn.read(worksheet="Catalogue", skiprows=2, ttl=0)
         df_cat = df_cat.dropna(subset=["Désignation"])
 
-        # Nettoyage des espaces invisibles dans la colonne Désignation
-        df_cat["Désignation_clean"] = df_cat["Désignation"].astype(str).str.strip()
-
-        try:
-            df_mouv = conn.read(spreadsheet=URL_SHEET, worksheet="Mouvements", skiprows=3, ttl=0)
-        except Exception:
-            df_mouv = pd.DataFrame()
-
-        date_jour = datetime.now().strftime("%Y-%m-%d")
-        nouvelles_lignes_mouv = []
-
+        # 2. Mise à jour des sorties et stocks dans le dataframe
         for item in panier:
             desig = str(item["Désignation"]).strip()
-            qte_vendue = int(item["Quantité"])
-            prix_u = float(item["Prix Unitaire"])
-            total_vente = float(item["Total"])
+            qte = int(item["Quantité"])
+            
+            idx = df_cat[df_cat["Désignation"].astype(str).str.strip() == desig].index
+            if not idx.empty:
+                i = idx[0]
+                # Traitement Sorties
+                sorties_act = df_cat.at[i, "Sorties"] if "Sorties" in df_cat.columns and pd.notna(df_cat.at[i, "Sorties"]) else 0
+                digits_sorties = "".join(c for c in str(sorties_act) if c.isdigit())
+                val_sorties = int(digits_sorties) if digits_sorties else 0
+                df_cat.at[i, "Sorties"] = val_sorties + qte
+
+                # Traitement Stock Actuel si la colonne existe
+                if "Stock Actuel" in df_cat.columns:
+                    stock_act = df_cat.at[i, "Stock Actuel"] if pd.notna(df_cat.at[i, "Stock Actuel"]) else 0
+                    digits_stock = "".join(c for c in str(stock_act) if c.isdigit())
+                    val_stock = int(digits_stock) if digits_stock else 0
+                    df_cat.at[i, "Stock Actuel"] = val_stock - qte
+
+        # 3. Écriture sans l'argument 'range' pour éviter l'erreur API
+        df_cat = df_cat.fillna("")
+        conn.update(worksheet="Catalogue", data=df_cat)
+
+        st.cache_data.clear()
+        return True
+
+    except Exception as e:
+        st.error(f"Erreur lors de la mise à jour Google Sheets : {e}")
+        return False
 
             # Recherche exacte de l'article (insensible aux espaces superflus)
             idx = df_cat[df_cat["Désignation_clean"] == desig].index
