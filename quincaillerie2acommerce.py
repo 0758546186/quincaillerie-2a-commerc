@@ -413,7 +413,6 @@ def enregistrer_reapprovisionnement_sheets(desig, qte_recue, nom_fournisseur, pr
         except Exception as e_mouv:
             st.error(f"❌ Erreur sur l'onglet Mouvements : {e_mouv}")
             return False
-
 if lignes_a_ajouter:
             res = ws_mouv.append_rows(lignes_a_ajouter, value_input_option="USER_ENTERED")
             st.info(f"Résultat écriture : {res}") # Message de confirmation
@@ -426,6 +425,9 @@ if lignes_a_ajouter:
 # --- APPLICATION PRINCIPALE ---
 if df.empty:
     st.stop()
+
+if "panier" not in st.session_state:
+    st.session_state.panier = []
 
 if "panier" not in st.session_state:
     st.session_state.panier = []
