@@ -414,6 +414,17 @@ def enregistrer_reapprovisionnement_sheets(desig, qte_recue, nom_fournisseur, pr
             st.error(f"❌ Erreur sur l'onglet Mouvements : {e_mouv}")
             return False
 
+# Exemple de structure correcte autour de la ligne 418 :
+try:
+    # Vos opérations sur Google Sheets ou le DataFrame
+    ws_mouv = classeur.worksheet("Mouvements")
+    # ...
+except Exception as e:
+    st.error(f"Erreur : {e}")
+
+# Le 'if' vient APRÈS la fermeture du bloc try / except
+if df.empty:
+    st.warning("Aucune donnée disponible.")
 # --- APPLICATION PRINCIPALE ---
 if df.empty:
     st.stop()
