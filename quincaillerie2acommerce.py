@@ -488,13 +488,13 @@ with tab1:
                 </div>
                 """, unsafe_allow_html=True)
 
-             # 🛒 SAISIE DE LA QUANTITÉ ET DU PRIX
+           # 🛒 SAISIE DE LA QUANTITÉ ET DU PRIX
                 col_qte, col_prix, col_btn = st.columns([1, 1, 1])
                 
-
+                with col_qte:
                     qte = st.number_input("Quantité :", min_value=1, value=1, step=1)
                 
-                prix:
+                with col_prix:
                     # Nettoyage sécurisé pour extraire uniquement la valeur numérique
                     if pd.notna(prix_conseille):
                         val_clean = "".join(c for c in str(prix_conseille) if c.isdigit() or c in ['.', ',']).replace(',', '.')
@@ -506,7 +506,6 @@ with tab1:
                         "Prix Unitaire Appliqué (FCFA) :", 
                         value=prix_valeur_num
                     )
-
                 # Nettoyage et conversion du prix plancher
                 try:
                     val_plan_clean = "".join(c for c in str(prix_plancher) if c.isdigit() or c in ['.', ',']).replace(',', '.')
