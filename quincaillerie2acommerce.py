@@ -21,58 +21,19 @@ st.set_page_config(
 # --- URL DU FICHIER GOOGLE SHEETS ---
 URL_SHEET = "https://docs.google.com/spreadsheets/d/1XVl4h6XZ_-RAZio-ScbbSOwvWXmT3S49vtuKM66EhtM/edit"
 
-# Gestion universelle des secrets (Local + Streamlit Cloud)
+# Initialisation native avec les secrets TOML Streamlit
 if "gcp_service_account" in st.secrets:
-    gcp_secrets = dict(st.secrets["gcp_service_account"])
-elif "connections" in st.secrets and "gsheets" in st.secrets["connections"]:
-    gcp_secrets = dict(st.secrets["connections"]["gsheets"])
+    service_account_info = dict(st.secrets["gcp_service_account"])
 else:
-    gcp_secrets = dict(st.secrets)
+    st.error("Section [gcp_service_account] introuvable dans les Secrets Streamlit.")
+    st.stop()
 
-# Nettoyage et conversion sécurisée de json_key
-if "json_key" in gcp_secrets:
-    raw_key = gcp_secrets["json_key"]
-    if isinstance(raw_key, str):
-        # Nettoie les retours à la ligne et espaces invalides
-        cleaned_key = raw_key.strip().replace('\\n', '\n')
-        service_account_info = json.loads(cleaned_key)
-    else:
-        service_account_info = dict(raw_key)
-else:
-    service_account_info = gcp_secrets
-
-# Connexion Google Sheets
+# Connexion unique à Google Sheets
 conn = st.connection(
     "gsheets",
     type=GSheetsConnection,
     service_account_info=service_account_info
 )
-
-# 3. Connexion à Google Sheets via st.connection
-conn = st.connection(
-    "gsheets",
-    type=GSheetsConnection,
-    service_account_info=service_account_info
-)
-
-# Initialiser la connexion Google Sheets
-conn = st.connection(
-    "gsheets",
-    type=GSheetsConnection,
-    service_account_info=service_account_info
-)
-
-# Initialisation de la connexion Google Sheets
-# Charger les secrets sous forme de dictionnaire nativement
-service_account_info = dict(st.secrets["gcp_service_account"])
-
-# Initialiser la connexion Google Sheets
-conn = st.connection(
-    "gsheets",
-    type=GSheetsConnection,
-    service_account_info=service_account_info
-)
-
 
 # --- FONCTION DE CHARGEMENT DES DONNÉES DEPUIS GOOGLE SHEETS ---
 @st.cache_data(ttl=60)
