@@ -22,11 +22,8 @@ st.set_page_config(
 URL_SHEET = "https://docs.google.com/spreadsheets/d/1XVl4h6XZ_-RAZio-ScbbSOwvWXmT3S49vtuKM66EhtM/edit"
 
 # Initialisation native avec les secrets TOML Streamlit
-if "connections" in st.secrets and "gsheets" in st.secrets["connections"]:
-    service_account_info = dict(st.secrets["connections"]["gsheets"])
-else:
-    st.error("Section [connections.gsheets] introuvable dans les Secrets Streamlit.")
-    st.stop()
+if "gcp_service_account" in st.secrets:
+    service_account_info = dict(st.secrets["gcp_service_account"])
 
 #  NOUVELLE LIGNE (qui charge vos secrets de compte de service)
 from streamlit_gsheets import GSheetsConnection
@@ -606,75 +603,95 @@ with tab1:
                                     st.success("Article ajouté au panier !")
                                     st.rerun()
 
-# --- PARTIE DROITE : GESTION DU PANIER & VALIDATION DE LA VENTE ---
-    with col_panier:
-        st.subheader("🛒 Panier en Cours")
-        
-        if st.session_state.panier:
-            df_panier = pd.DataFrame(st.session_state.panier)
-            st.table(df_panier[["Désignation", "Quantité", "Total"]])
+# --- GESTION DU PANIER & VALIDATION DE LA VENTE ---
+# --- BOUTON DE VALIDATION DE LA VENTE ---
+if st.button("✅ Valider la Vente", type="primary", use_container_width=True):
+    if not st.session_state.panier:
+        st.warning("⚠️ Le panier est vide !")
+    else:
+        with st.spinner("Enregistrement de la vente et mise à jour des stocks en cours..."):
+            nom_client_final = nom_client if 'nom_client' in locals() and nom_client else "Client Comptoir"
             
-            total_general = df_panier["Total"].sum()
-            st.markdown(f"### **Total Général : {total_general:,} FCFA**")
-            
-            nom_client = st.text_input("Nom du Client (optionnel) :", value="Client Comptoir")
-            
-            # Définition obligatoire des deux colonnes
-            col_v1, col_v2 = st.columns(2)
-            
-            with col_v1:
-                if st.button("❌ Vider le panier"):
-                    st.session_state.panier = []
-                    st.rerun()
-                
-            with col_v2:
-                if st.button("✅ Valider la Vente", type="primary"):
-                    with st.spinner("Mise à jour du Google Sheet en cours..."):
-                        # 1. Mise à jour du stock
-                        succes, msg = mettre_a_jour_stock_gsheet(st.session_state.panier, mode="vente")
-# 2. Enregistrement dans l'onglet Mouvements
-                        if succes:
-                            try:
-                                # skiprows=2 pour démarrer à la ligne 3 (vrais entêtes)
-                                try:
-                                    df_mouvements = conn.read(worksheet="Mouvements", skiprows=2, ttl=0)
-                                except Exception:
-                                    df_mouvements = pd.DataFrame()
+            # 1. Mise à jour du Catalogue
+            succes = enregistrer_vente_excel(st.session_state.panier, nom_client_final)
 
-                                date_jour = datetime.now().strftime("%Y-%m-%d")
-                                nouvelles_lignes = []
-                                
-                                for item in st.session_state.panier:
-                                    desig = str(item.get("Désignation", ""))
-                                    qte = int(item.get("Quantité", item.get("quantite", 1)))
-                                    pu = float(item.get("Prix Unitaire", item.get("prix_unitaire", 0)))
-                                    tot = float(item.get("Total", item.get("total", qte * pu)))
-                                    code_art = str(item.get("Code Article", item.get("Code", f"ART-{desig[:3].upper()}")))
-                                    cat_art = str(item.get("Catégorie", item.get("categorie", "")))
+            # 2. Enregistrement dans l'onglet Mouvements
+            if succes:
+                try:
+                    # skiprows=2 pour démarrer à la ligne 3 (vrais entêtes)
+                    try:
+                        df_mouvements = conn.read(worksheet="Mouvements", skiprows=2, ttl=0)
+                    except Exception:
+                        df_mouvements = pd.DataFrame()
 
-                                    nouvelles_lignes.append({
-                                        "Date": str(date_jour),
-                                        "Type Mouvement": "Sortie",
-                                        "Code Article": code_art,
-                                        "Désignation": desig,
-                                        "Catégorie": cat_art,
-                                        "Quantité": qte,
-                                        "Prix Unitaire (FCFA)": pu,
-                                        "Total FCFA": tot,
-                                        "Client / Fournisseur": str(nom_client)
-                                    })
-                                
-                                df_nouv = pd.DataFrame(nouvelles_lignes)
-                                
-                                # Fusion et nettoyage des colonnes vides / NaN
-                                df_final_mouv = pd.concat([df_mouvements, df_nouv], ignore_index=True)
-                                df_final_mouv = df_final_mouv.dropna(how="all", axis=1)
-                                df_final_mouv = df_final_mouv.fillna("")
-                                
-                                # Envoi propre sans arguments invalides
-                                conn.update(worksheet="Mouvements", data=df_final_mouv)
-                            except Exception as e_mouv:
-                                st.warning(f"Stock mis à jour, mais enregistrement Mouvements échoué : {e_mouv}")
+                    date_jour = datetime.now().strftime("%Y-%m-%d")
+                    nouvelles_lignes = []
+                    
+                    for item in st.session_state.panier:
+                        desig = str(item.get("Désignation", ""))
+                        qte = int(item.get("Quantité", item.get("quantite", 1)))
+                        pu = float(item.get("Prix Unitaire", item.get("prix_unitaire", 0)))
+                        tot = float(item.get("Total", item.get("total", qte * pu)))
+                        code_art = str(item.get("Code Article", item.get("Code", f"ART-{desig[:3].upper()}")))
+                        cat_art = str(item.get("Catégorie", item.get("categorie", "")))
+
+                        nouvelles_lignes.append({
+                            "Date": str(date_jour),
+                            "Type Mouvement": "Sortie",
+                            "Code Article": code_art,
+                            "Désignation": desig,
+                            "Catégorie": cat_art,
+                            "Quantité": qte,
+                            "Prix Unitaire (FCFA)": pu,
+                            "Total FCFA": tot,
+                            "Client / Fournisseur": str(nom_client_final)
+                        })
+                    
+                    df_nouv = pd.DataFrame(nouvelles_lignes)
+                    
+                    # Fusion et nettoyage des colonnes vides / NaN
+                    df_final_mouv = pd.concat([df_mouvements, df_nouv], ignore_index=True)
+                    df_final_mouv = df_final_mouv.dropna(how="all", axis=1)
+                    df_final_mouv = df_final_mouv.fillna("")
+                    
+                    # Envoi propre sans arguments invalides
+                    conn.update(worksheet="Mouvements", data=df_final_mouv)
+                except Exception as e_mouv:
+                    st.warning(f"Stock mis à jour, mais enregistrement Mouvements échoué : {e_mouv}")
+
+                st.success("🎉 Vente enregistrée et stock mis à jour avec succès dans Google Sheets !")
+
+                # 3. Sauvegarde temporaire de la vente pour le Reçu
+                st.session_state["derniere_vente"] = {
+                    "client": nom_client_final,
+                    "articles": list(st.session_state.panier),
+                    "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                }
+
+                # 4. Vidage du panier et rechargement
+                st.session_state.panier = []
+                st.rerun()
+            else:
+                st.error("❌ Échec de la mise à jour du Catalogue.")
+
+# --- AFFICHAGE DU REÇU DE LA DERNIÈRE VENTE ---
+if "derniere_vente" in st.session_state and st.session_state["derniere_vente"]:
+    vente = st.session_state["derniere_vente"]
+    
+    st.markdown("---")
+    st.subheader("🧾 Reçu de Caisse / Confirmation")
+    st.write(f"**Date :** {vente['date']}")
+    st.write(f"**Client :** {vente['client']}")
+
+    df_recu = pd.DataFrame(vente["articles"])
+    st.dataframe(df_recu[["Désignation", "Quantité", "Prix Unitaire", "Total"]], use_container_width=True)
+
+    total_recu = sum(item["Total"] for item in vente["articles"])
+    st.markdown(f"### **Total Payé : {total_recu:,.0f} FCFA**")
+
+    if st.button("🧹 Fermer le reçu"):
+        st.session_state["derniere_vente"] = None
+        st.rerun()
 # --- ONGLET 2 : ARRIVAGES / ENTRÉES ---
 with tab2:
     st.header("📦 Enregistrement d'un Arrivage (Réapprovisionnement)")
