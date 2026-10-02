@@ -385,7 +385,11 @@ def enregistrer_reapprovisionnement_sheets(desig, qte_recue, nom_fournisseur, pr
 # 4. Enregistrement dans l'onglet Mouvements
         try:
             ws_mouv = classeur.worksheet("Mouvements")
-            date_jour = datetime.now().strftime("%d/%m/%Y")
+            date_jour = datetime.now().strftime("%Y-%m-%d")
+
+            # On compte uniquement les lignes qui ont une Date en Colonne A
+            col_dates = ws_mouv.col_values(1)  # Lit la colonne A
+            prochaine_ligne = len(col_dates) + 1  # Si 31 lignes d'entêtes/données -> Ligne 32
 
             lignes_a_ajouter = []
             for item in panier:
@@ -400,21 +404,19 @@ def enregistrer_reapprovisionnement_sheets(desig, qte_recue, nom_fournisseur, pr
                     f"ART-{desig[:3].upper()}",             # Col C: Code Article
                     desig,                                  # Col D: Désignation
                     qte,                                    # Col E: Quantité
-                    f"{int(prix_u)} FCFA",                  # Col F: Prix Unitaire
-                    f"{int(total_v)} FCFA",                 # Col G: Total FCFA
+                    prix_u,                                 # Col F: Prix Unitaire
+                    total_v,                                # Col G: Total
                     nom_client                              # Col H: Client
                 ])
 
+            # Force l'écriture exacte à la suite des données (ex: A32:H32)
             if lignes_a_ajouter:
-                res = ws_mouv.append_rows(lignes_a_ajouter, value_input_option="USER_ENTERED")
-                st.info(f"Résultat écriture : {res}")
+                plage_cible = f"A{prochaine_ligne}:H{prochaine_ligne + len(lignes_a_ajouter) - 1}"
+                ws_mouv.update(plage_cible, lignes_a_ajouter, value_input_option="USER_ENTERED")
 
         except Exception as e_mouv:
             st.error(f"❌ Erreur sur l'onglet Mouvements : {e_mouv}")
             return False
-
-        st.cache_data.clear()
-        return True
 
     except Exception as e:
         st.error(f"Erreur globale lors de la mise à jour Google Sheets : {e}")
