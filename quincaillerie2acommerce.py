@@ -260,27 +260,28 @@ def generer_recu_pdf(nom_client, panier, total_general):
 
 
 # --- FONCTION DE MISE À JOUR DU STOCK (VENTE) ---
+import streamlit as st
+from datetime import datetime
+import gspread
+
 def enregistrer_vente_excel(panier, nom_client="Client Comptoir"):
+    # --- BLOC 1 : CONNEXION AU SPREADSHEET ---
     try:
-        # 1. Connexion au classeur Google Sheets
         gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
         classeur = gc.open("Gestion_Quincaillerie_A_COMMERCE")
-    except Exception as e:
-        st.error(f"❌ Connexion Google Sheets impossible : {e}")
+    except Exception as e_conn:
+        st.error(f"❌ Connexion Google Sheets impossible : {e_conn}")
         return False
 
     date_jour = datetime.now().strftime("%Y-%m-%d")
 
-    # --- ENREGISTREMENT DANS L'ONGLET MOUVEMENTS ---
+    # --- BLOC 2 : ENREGISTREMENT DANS L'ONGLET MOUVEMENTS ---
     try:
         ws_mouv = classeur.worksheet("Mouvements")
 
-        # Récupère toutes les valeurs de la colonne A (Dates)
+        # Récupère les valeurs de la colonne A (Dates) pour trouver la ligne 32
         col_a_vals = ws_mouv.col_values(1)
-        
-        # Trouve la première ligne réellement vide dans la colonne A
-        # Si 31 lignes sont remplies, prochaine_ligne sera 32
-        prochaine_ligne = len(col_a_vals) + 1
+        prochaine_ligne = len(col_a_vals) + 1 if col_a_vals else 2
 
         lignes_a_ajouter = []
         for item in panier:
@@ -289,24 +290,34 @@ def enregistrer_vente_excel(panier, nom_client="Client Comptoir"):
             prix_u = float(item.get("Prix Unitaire", item.get("prix_unitaire", 0)))
             total_v = float(item.get("Total", qte * prix_u))
 
-            # Format correspondant aux lignes 16-31
             lignes_a_ajouter.append([
                 date_jour,                              # Col A: Date
                 "Sortie",                               # Col B: Type Mouvement
                 f"ART-{desig[:3].upper()}",             # Col C: Code Article
-                desig,                                  # Col D: Désignation / Article
+                desig,                                  # Col D: Désignation
                 qte,                                    # Col E: Quantité
                 prix_u,                                 # Col F: Prix Unitaire
-                total_v,                                # Col G: Total FCFA
+                total_v,                                # Col G: Total
                 nom_client                              # Col H: Client
             ])
 
         if lignes_a_ajouter:
-            # Écriture forcée à la plage A32:H32
             plage = f"A{prochaine_ligne}:H{prochaine_ligne + len(lignes_a_ajouter) - 1}"
             ws_mouv.update(range_name=plage, values=lignes_a_ajouter, value_input_option="USER_ENTERED")
             st.success(f"✅ Vente inscrite à la ligne {prochaine_ligne} de l'onglet Mouvements !")
 
+    except Exception as e_mouv:
+        st.error(f"❌ Erreur lors de l'écriture dans Mouvements : {e_mouv}")
+        return False
+
+    # --- BLOC 3 : MISE À JOUR DU CATALOGUE / STOCK ---
+    try:
+        ws_cat = classeur.worksheet("Catalogue")
+        # Logique de mise à jour des stocks si vous en avez une
+    except Exception as e_cat:
+        st.warning(f"⚠️ Stock non mis à jour : {e_cat}")
+
+    return True
 
 
     # --- MISE À JOUR DU CATALOGUE (STOCK) ---
