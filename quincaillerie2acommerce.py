@@ -513,9 +513,27 @@ with tab1:
                 except (ValueError, TypeError):
                     prix_plancher_num = 0.0
 
-                # AJOUT DE LA COLONNE BOUTON QUI MANQUAIT
-                   with btn:
-                    st.write("") # Espacement pour aligner verticalement avec les champs
+              # 🛒 SAISIE DE LA QUANTITÉ ET DU PRIX
+                col_qte, col_prix, col_btn = st.columns([1, 1, 1])
+                
+                with col_qte:
+                    qte = st.number_input("Quantité :", min_value=1, value=1, step=1)
+                
+                with col_prix:
+                    # Nettoyage sécurisé pour extraire uniquement la valeur numérique
+                    if pd.notna(prix_conseille):
+                        val_clean = "".join(c for c in str(prix_conseille) if c.isdigit() or c in ['.', ',']).replace(',', '.')
+                        prix_valeur_num = float(val_clean) if val_clean else 0.0
+                    else:
+                        prix_valeur_num = 0.0
+
+                    prix_applique = st.number_input(
+                        "Prix Unitaire Appliqué (FCFA) :", 
+                        value=prix_valeur_num
+                    )
+
+                with col_btn:
+                    st.write("") # Espacement pour aligner verticalement
                     st.write("")
                     if st.button("➕ Ajouter au Panier", use_container_width=True):
                         if prix_plancher_num > 0 and prix_applique < prix_plancher_num:
