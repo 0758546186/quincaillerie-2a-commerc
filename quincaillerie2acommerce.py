@@ -234,7 +234,7 @@ def generer_recu_pdf(nom_client, panier, total_general):
     for item in panier:
         designation = encode_latin1(str(item.get('Désignation', item.get('article', 'Article')))[:45])
         quantite = encode_latin1(str(item.get('Quantité', item.get('quantite', 1))))
-        prix_unitaire = encode_latin1(f"{item.get('Prix Unitaire', item.get('prix_unitaire', 0)):,} FCFA")
+        _unitaire = encode_latin1(f"{item.get(' Unitaire', item.get('prix_unitaire', 0)):,} FCFA")
         total_ligne = encode_latin1(f"{item.get('Total', item.get('total', 0)):,} FCFA")
 
         pdf.cell(90, 7, f" {designation}", border=1)
@@ -511,50 +511,6 @@ with tab1:
                     st.write("") # Espacement pour aligner verticalement
                     st.write("")
                     if st.button("➕ Ajouter au Panier", use_container_width=True, key="btn_ajouter_panier"):
-                        if prix_plancher_num > 0 and prix_applique < prix_plancher_num:
-                            st.error(f"❌ Prix inférieur au plancher ({prix_plancher_num:,.0f} FCFA).")
-                        elif qte > stock_actuel_val:
-                            st.warning(f"⚠️ Stock insuffisant ! Disponible : {stock_actuel_val}")
-                        else:
-                            st.session_state.panier.append({
-                                "Désignation": article_choisi,
-                                "Catégorie": row_article[c_cat] if pd.notna(row_article[c_cat]) else "",
-                                "Quantité": qte,
-                                "Prix Unitaire": int(prix_applique),
-                                "Total": int(qte * prix_applique)
-                            })
-                            st.success("Article ajouté au panier !")
-                            st.rerun()
-                # Nettoyage et conversion du prix plancher
-                try:
-                    val_plan_clean = "".join(c for c in str(prix_plancher) if c.isdigit() or c in ['.', ',']).replace(',', '.')
-                    prix_plancher_num = float(val_plan_clean) if val_plan_clean else 0.0
-                except (ValueError, TypeError):
-                    prix_plancher_num = 0.0
-
-              # 🛒 SAISIE DE LA QUANTITÉ ET DU PRIX
-                col_qte, col_prix, col_btn = st.columns([1, 1, 1])
-                
-                with col_qte:
-                    qte = st.number_input("Quantité :", min_value=1, value=1, step=1)
-                
-                with col_prix:
-                    # Nettoyage sécurisé pour extraire uniquement la valeur numérique
-                    if pd.notna(prix_conseille):
-                        val_clean = "".join(c for c in str(prix_conseille) if c.isdigit() or c in ['.', ',']).replace(',', '.')
-                        prix_valeur_num = float(val_clean) if val_clean else 0.0
-                    else:
-                        prix_valeur_num = 0.0
-
-                    prix_applique = st.number_input(
-                        "Prix Unitaire Appliqué (FCFA) :", 
-                        value=prix_valeur_num
-                    )
-
-                with col_btn:
-                    st.write("") # Espacement pour aligner verticalement
-                    st.write("")
-                    if st.button("➕ Ajouter au Panier", use_container_width=True):
                         if prix_plancher_num > 0 and prix_applique < prix_plancher_num:
                             st.error(f"❌ Prix inférieur au plancher ({prix_plancher_num:,.0f} FCFA).")
                         elif qte > stock_actuel_val:
