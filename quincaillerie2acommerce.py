@@ -491,10 +491,10 @@ with tab1:
              # 🛒 SAISIE DE LA QUANTITÉ ET DU PRIX
                 col_qte, col_prix, col_btn = st.columns([1, 1, 1])
                 
-                with col_qte:
+                qte:
                     qte = st.number_input("Quantité :", min_value=1, value=1, step=1)
                 
-                with col_prix:
+                prix:
                     # Nettoyage sécurisé pour extraire uniquement la valeur numérique
                     if pd.notna(prix_conseille):
                         val_clean = "".join(c for c in str(prix_conseille) if c.isdigit() or c in ['.', ',']).replace(',', '.')
@@ -515,7 +515,7 @@ with tab1:
                     prix_plancher_num = 0.0
 
                 # AJOUT DE LA COLONNE BOUTON QUI MANQUAIT
-                with col_btn:
+                btn:
                     st.write("") # Espacement pour aligner verticalement avec les champs
                     st.write("")
                     if st.button("➕ Ajouter au Panier", use_container_width=True):
@@ -561,7 +561,7 @@ with tab1:
                         # 1. Mise à jour du stock
                         succes, msg = mettre_a_jour_stock_gsheet(st.session_state.panier, mode="vente")
                         
-                        # 2. Enregistrement dans l'onglet Mouvements
+# 2. Enregistrement dans l'onglet Mouvements
                         if succes:
                             try:
                                 df_mouvements = conn.read(worksheet="Mouvements", ttl=0)
@@ -570,39 +570,26 @@ with tab1:
                                 
                                 for item in st.session_state.panier:
                                     nouvelles_lignes.append({
-                                        "Date": date_jour,
+                                        "Date": str(date_jour),
                                         "Type Mouvement": "Sortie",
-                                        "Code Article": item.get("Code Article", item.get("Code", "ART")),
-                                        "Catégorie": item.get("Catégorie", ""),
-                                        "Quantité": item.get("Quantité", 1),
-                                        "Prix Unitaire (FCFA)": item.get("Prix Unitaire", 0),
-                                        "Total FCFA": item.get("Total", 0),
-                                        "Client / Fournisseur": nom_client
+                                        "Code Article": str(item.get("Code Article", item.get("Code", item.get("code", "ART")))),
+                                        "Catégorie": str(item.get("Catégorie", item.get("categorie", ""))),
+                                        "Quantité": int(item.get("Quantité", item.get("quantite", 1))),
+                                        "Prix Unitaire (FCFA)": float(item.get("Prix Unitaire", item.get("prix_unitaire", 0))),
+                                        "Total FCFA": float(item.get("Total", item.get("total", 0))),
+                                        "Client / Fournisseur": str(nom_client)
                                     })
                                 
                                 df_nouv = pd.DataFrame(nouvelles_lignes)
+                                
+                                # Fusion et nettoyage des valeurs NaN (évite le HTTP 400)
                                 df_final_mouv = pd.concat([df_mouvements, df_nouv], ignore_index=True)
+                                df_final_mouv = df_final_mouv.fillna("")
+                                
+                                # Envoi à Google Sheets
                                 conn.update(worksheet="Mouvements", data=df_final_mouv)
                             except Exception as e_mouv:
                                 st.warning(f"Stock mis à jour, mais enregistrement Mouvements échoué : {e_mouv}")
-
-                    if succes:
-                        pdf_path = generer_recu_pdf(nom_client, st.session_state.panier, total_general)
-                        st.success("🎉 Vente enregistrée, Mouvements ajoutés et Stock mis à jour !")
-                        
-                        if os.path.exists(pdf_path):
-                            with open(pdf_path, "rb") as file:
-                                st.download_button(
-                                    label="📄 Télécharger le Reçu PDF",
-                                    data=file,
-                                    file_name=os.path.basename(pdf_path),
-                                    mime="application/pdf"
-                                )
-                        st.session_state.panier = []
-                    else:
-                        st.error(f"❌ Erreur : {msg}")
-        else:
-            st.info("Le panier est actuellement vide.")
 
 # --- ONGLET 2 : ARRIVAGES / ENTRÉES ---
 with tab2:
