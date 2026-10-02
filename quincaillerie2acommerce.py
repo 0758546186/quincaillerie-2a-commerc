@@ -29,11 +29,7 @@ else:
     st.stop()
 
 # Connexion unique à Google Sheets
-conn = st.connection(
-    "gsheets",
-    type=GSheetsConnection,
-    service_account_info=service_account_info
-)
+conn = st.connection("gsheets", type=GSheetsConnection)
 
 # --- FONCTION DE CHARGEMENT DES DONNÉES DEPUIS GOOGLE SHEETS ---
 @st.cache_data(ttl=60)
