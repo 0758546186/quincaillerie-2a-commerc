@@ -631,36 +631,49 @@ with tab1:
                         # 1. Mise à jour du stock
                         succes, msg = mettre_a_jour_stock_gsheet(st.session_state.panier, mode="vente")
                         
-# 2. Enregistrement dans l'onglet Mouvements
+## 2. Enregistrement dans l'onglet Mouvements
                         if succes:
                             try:
-                                df_mouvements = conn.read(worksheet="Mouvements", ttl=0)
+                                # skiprows=2 pour démarrer à la ligne 3 (vrais entêtes)
+                                try:
+                                    df_mouvements = conn.read(worksheet="Mouvements", skiprows=2, ttl=0)
+                                except Exception:
+                                    df_mouvements = pd.DataFrame()
+
                                 date_jour = datetime.now().strftime("%Y-%m-%d")
                                 nouvelles_lignes = []
                                 
                                 for item in st.session_state.panier:
+                                    desig = str(item.get("Désignation", ""))
+                                    qte = int(item.get("Quantité", item.get("quantite", 1)))
+                                    pu = float(item.get("Prix Unitaire", item.get("prix_unitaire", 0)))
+                                    tot = float(item.get("Total", item.get("total", qte * pu)))
+                                    code_art = str(item.get("Code Article", item.get("Code", f"ART-{desig[:3].upper()}")))
+                                    cat_art = str(item.get("Catégorie", item.get("categorie", "")))
+
                                     nouvelles_lignes.append({
                                         "Date": str(date_jour),
                                         "Type Mouvement": "Sortie",
-                                        "Code Article": str(item.get("Code Article", item.get("Code", item.get("code", "ART")))),
-                                        "Catégorie": str(item.get("Catégorie", item.get("categorie", ""))),
-                                        "Quantité": int(item.get("Quantité", item.get("quantite", 1))),
-                                        "Prix Unitaire (FCFA)": float(item.get("Prix Unitaire", item.get("prix_unitaire", 0))),
-                                        "Total FCFA": float(item.get("Total", item.get("total", 0))),
+                                        "Code Article": code_art,
+                                        "Désignation": desig,
+                                        "Catégorie": cat_art,
+                                        "Quantité": qte,
+                                        "Prix Unitaire (FCFA)": pu,
+                                        "Total FCFA": tot,
                                         "Client / Fournisseur": str(nom_client)
                                     })
                                 
                                 df_nouv = pd.DataFrame(nouvelles_lignes)
                                 
-                                # Fusion et nettoyage des valeurs NaN (évite le HTTP 400)
+                                # Fusion, suppression des colonnes entièrement vides et nettoyage des NaN
                                 df_final_mouv = pd.concat([df_mouvements, df_nouv], ignore_index=True)
+                                df_final_mouv = df_final_mouv.dropna(how="all", axis=1)
                                 df_final_mouv = df_final_mouv.fillna("")
                                 
-                                # Envoi à Google Sheets
-                                conn.update(worksheet="Mouvements", data=df_final_mouv)
+                                # Envoi à Google Sheets à partir de la ligne A3
+                                conn.update(worksheet="Mouvements", data=df_final_mouv, range="A3")
                             except Exception as e_mouv:
                                 st.warning(f"Stock mis à jour, mais enregistrement Mouvements échoué : {e_mouv}")
-
 # --- ONGLET 2 : ARRIVAGES / ENTRÉES ---
 with tab2:
     st.header("📦 Enregistrement d'un Arrivage (Réapprovisionnement)")
