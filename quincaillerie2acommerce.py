@@ -226,7 +226,7 @@ def generer_recu_pdf(nom_client, panier, total_general):
     pdf.set_font("Helvetica", "B", 10)
     pdf.cell(90, 8, encode_latin1(" Article / Désignation"), border=1, fill=True)
     pdf.cell(25, 8, encode_latin1("Qté"), border=1, align="C", fill=True)
-    pdf.cell(35, 8, encode_latin1("Prix Unitaire"), border=1, align="R", fill=True)
+    pdf.cell(35, 8, encode_latin1(" Unitaire"), border=1, align="R", fill=True)
     pdf.cell(40, 8, encode_latin1("Total FCFA"), border=1, align="R", fill=True, ln=True)
     
     # Lignes du panier
@@ -487,12 +487,11 @@ with tab1:
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
-
-           # 🛒 SAISIE DE LA QUANTITÉ ET DU PRIX
+# 🛒 SAISIE DE LA QUANTITÉ ET DU PRIX
                 col_qte, col_prix, col_btn = st.columns([1, 1, 1])
                 
                 with col_qte:
-                    qte = st.number_input("Quantité :", min_value=1, value=1, step=1)
+                    qte = st.number_input("Quantité :", min_value=1, value=1, step=1, key="input_qte_vente")
                 
                 with col_prix:
                     # Nettoyage sécurisé pour extraire uniquement la valeur numérique
@@ -504,8 +503,28 @@ with tab1:
 
                     prix_applique = st.number_input(
                         "Prix Unitaire Appliqué (FCFA) :", 
-                        value=prix_valeur_num
+                        value=prix_valeur_num,
+                        key="input_prix_vente"
                     )
+
+                with col_btn:
+                    st.write("") # Espacement pour aligner verticalement
+                    st.write("")
+                    if st.button("➕ Ajouter au Panier", use_container_width=True, key="btn_ajouter_panier"):
+                        if prix_plancher_num > 0 and prix_applique < prix_plancher_num:
+                            st.error(f"❌ Prix inférieur au plancher ({prix_plancher_num:,.0f} FCFA).")
+                        elif qte > stock_actuel_val:
+                            st.warning(f"⚠️ Stock insuffisant ! Disponible : {stock_actuel_val}")
+                        else:
+                            st.session_state.panier.append({
+                                "Désignation": article_choisi,
+                                "Catégorie": row_article[c_cat] if pd.notna(row_article[c_cat]) else "",
+                                "Quantité": qte,
+                                "Prix Unitaire": int(prix_applique),
+                                "Total": int(qte * prix_applique)
+                            })
+                            st.success("Article ajouté au panier !")
+                            st.rerun()
                 # Nettoyage et conversion du prix plancher
                 try:
                     val_plan_clean = "".join(c for c in str(prix_plancher) if c.isdigit() or c in ['.', ',']).replace(',', '.')
