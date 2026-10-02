@@ -384,7 +384,6 @@ def enregistrer_reapprovisionnement_sheets(desig, qte_recue, nom_fournisseur, pr
             ws_cat.batch_update(maj, value_input_option="USER_ENTERED")
 # 4. Enregistrement dans l'onglet Mouvements
         try:
-            # Si vous utilisez gspread directement
             ws_mouv = classeur.worksheet("Mouvements")
             date_jour = datetime.now().strftime("%d/%m/%Y")
 
@@ -396,29 +395,29 @@ def enregistrer_reapprovisionnement_sheets(desig, qte_recue, nom_fournisseur, pr
                 total_v = float(item.get("Total", qte * prix_u))
 
                 lignes_a_ajouter.append([
-                    date_jour,                              # Col A
-                    "Sortie",                               # Col B
-                    f"ART-{desig[:3].upper()}",             # Col C
-                    desig,                                  # Col D
-                    qte,                                    # Col E
-                    f"{int(prix_u)} FCFA",                  # Col F
-                    f"{int(total_v)} FCFA",                 # Col G
-                    nom_client                              # Col H
+                    date_jour,                              # Col A: Date
+                    "Sortie",                               # Col B: Type Mouvement
+                    f"ART-{desig[:3].upper()}",             # Col C: Code Article
+                    desig,                                  # Col D: Désignation
+                    qte,                                    # Col E: Quantité
+                    f"{int(prix_u)} FCFA",                  # Col F: Prix Unitaire
+                    f"{int(total_v)} FCFA",                 # Col G: Total FCFA
+                    nom_client                              # Col H: Client
                 ])
 
             if lignes_a_ajouter:
                 res = ws_mouv.append_rows(lignes_a_ajouter, value_input_option="USER_ENTERED")
-                st.info(f"Résultat écriture : {res}") # Message de confirmation
+                st.info(f"Résultat écriture : {res}")
 
         except Exception as e_mouv:
             st.error(f"❌ Erreur sur l'onglet Mouvements : {e_mouv}")
             return False
-if lignes_a_ajouter:
-            res = ws_mouv.append_rows(lignes_a_ajouter, value_input_option="USER_ENTERED")
-            st.info(f"Résultat écriture : {res}") # Message de confirmation
 
-    except Exception as e_mouv:
-        st.error(f"❌ Erreur sur l'onglet Mouvements : {e_mouv}")
+        st.cache_data.clear()
+        return True
+
+    except Exception as e:
+        st.error(f"Erreur globale lors de la mise à jour Google Sheets : {e}")
         return False
 
 
