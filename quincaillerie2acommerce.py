@@ -393,45 +393,64 @@ def enregistrer_reapprovisionnement_sheets(desig, qte_recue, nom_fournisseur, pr
 
         if maj:
             ws_cat.batch_update(maj, value_input_option="USER_ENTERED")
-# 4. Enregistrement dans l'onglet Mouvements
-        try:
-            ws_mouv = classeur.worksheet("Mouvements")
-            date_jour = datetime.now().strftime("%Y-%m-%d")
-
-            # On compte uniquement les lignes qui ont une Date en Colonne A
-            col_dates = ws_mouv.col_values(1)  # Lit la colonne A
-            prochaine_ligne = len(col_dates) + 1  # Si 31 lignes d'entêtes/données -> Ligne 32
-
-            lignes_a_ajouter = []
-            for item in panier:
-                desig = str(item.get("Désignation", item.get("article", "")))
-                qte = int(item.get("Quantité", item.get("quantite", 1)))
-                prix_u = float(item.get("Prix Unitaire", item.get("prix_unitaire", 0)))
-                total_v = float(item.get("Total", qte * prix_u))
-
-                lignes_a_ajouter.append([
-                    date_jour,                              # Col A: Date
-                    "Sortie",                               # Col B: Type Mouvement
-                    f"ART-{desig[:3].upper()}",             # Col C: Code Article
-                    desig,                                  # Col D: Désignation
-                    qte,                                    # Col E: Quantité
-                    prix_u,                                 # Col F: Prix Unitaire
-                    total_v,                                # Col G: Total
-                    nom_client                              # Col H: Client
-                ])
-
-            # Force l'écriture exacte à la suite des données (ex: A32:H32)
-            if lignes_a_ajouter:
-                plage_cible = f"A{prochaine_ligne}:H{prochaine_ligne + len(lignes_a_ajouter) - 1}"
-                ws_mouv.update(plage_cible, lignes_a_ajouter, value_input_option="USER_ENTERED")
-
-        except Exception as e_mouv:
-            st.error(f"❌ Erreur sur l'onglet Mouvements : {e_mouv}")
-            return False
-
-    except Exception as e:
-        st.error(f"Erreur globale lors de la mise à jour Google Sheets : {e}")
+def enregistrer_vente_excel(panier, nom_client="Client Comptoir"):
+    try:
+        # 1. Connexion au classeur Google Sheets
+        gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
+        classeur = gc.open("Gestion_Quincaillerie_A_COMMERCE")
+    except Exception as e_conn:
+        st.error(f"❌ Connexion Google Sheets impossible : {e_conn}")
         return False
+
+    date_jour = datetime.now().strftime("%Y-%m-%d")
+
+    # --- ENREGISTREMENT DANS L'ONGLET MOUVEMENTS ---
+    try:
+        ws_mouv = classeur.worksheet("Mouvements")
+
+        # Récupère toutes les valeurs de la colonne A (Dates)
+        col_a_vals = ws_mouv.col_values(1)
+        
+        # Trouve la première ligne réellement vide dans la colonne A (Ex: Ligne 32)
+        prochaine_ligne = len(col_a_vals) + 1 if col_a_vals else 2
+
+        lignes_a_ajouter = []
+        for item in panier:
+            desig = str(item.get("Désignation", item.get("article", "")))
+            qte = int(item.get("Quantité", item.get("quantite", 1)))
+            prix_u = float(item.get("Prix Unitaire", item.get("prix_unitaire", 0)))
+            total_v = float(item.get("Total", qte * prix_u))
+
+            # Format correspondant aux colonnes A à H
+            lignes_a_ajouter.append([
+                date_jour,                              # Col A: Date
+                "Sortie",                               # Col B: Type Mouvement
+                f"ART-{desig[:3].upper()}",             # Col C: Code Article
+                desig,                                  # Col D: Désignation / Article
+                qte,                                    # Col E: Quantité
+                prix_u,                                 # Col F: Prix Unitaire
+                total_v,                                # Col G: Total FCFA
+                nom_client                              # Col H: Client
+            ])
+
+        if lignes_a_ajouter:
+            # Écriture forcée à la plage exacte (Ex: A32:H32)
+            plage = f"A{prochaine_ligne}:H{prochaine_ligne + len(lignes_a_ajouter) - 1}"
+            ws_mouv.update(range_name=plage, values=lignes_a_ajouter, value_input_option="USER_ENTERED")
+            st.success(f"✅ Vente inscrite à la ligne {prochaine_ligne} de l'onglet Mouvements !")
+
+    except Exception as e_mouv:
+        st.error(f"❌ Erreur lors de l'écriture dans Mouvements : {e_mouv}")
+        return False
+
+    # --- MISE À JOUR DU CATALOGUE / STOCK ---
+    try:
+        ws_cat = classeur.worksheet("Catalogue")
+        # Logique de mise à jour des stocks si active
+    except Exception as e_cat:
+        st.warning(f"⚠️ Stock non mis à jour : {e_cat}")
+
+    return True
 
 
 # --- APPLICATION PRINCIPALE ---
