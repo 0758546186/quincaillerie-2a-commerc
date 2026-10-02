@@ -22,10 +22,10 @@ st.set_page_config(
 URL_SHEET = "https://docs.google.com/spreadsheets/d/1XVl4h6XZ_-RAZio-ScbbSOwvWXmT3S49vtuKM66EhtM/edit"
 
 # Initialisation native avec les secrets TOML Streamlit
-if "gcp_service_account" in st.secrets:
-    service_account_info = dict(st.secrets["gcp_service_account"])
+if "connections" in st.secrets and "gsheets" in st.secrets["connections"]:
+    service_account_info = dict(st.secrets["connections"]["gsheets"])
 else:
-    st.error("Section [gcp_service_account] introuvable dans les Secrets Streamlit.")
+    st.error("Section [connections.gsheets] introuvable dans les Secrets Streamlit.")
     st.stop()
 
 #  NOUVELLE LIGNE (qui charge vos secrets de compte de service)
