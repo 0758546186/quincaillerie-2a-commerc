@@ -276,100 +276,47 @@ def _vers_nombre(val):
 # --- FONCTION DE MISE À JOUR DU STOCK (VENTE) ---
 def enregistrer_vente_excel(panier, nom_client):
     try:
-        client = obtenir_connexion_gsheets()
-        classeur = client.open_by_key("1XVl4h6XZ_-RAZio-ScbbSOwvWXmT3S49vtuKM66EhtM")
+        # 1. Lecture complète de la feuille Catalogue
+        df_raw = conn.read(worksheet="Catalogue", ttl=0)
 
-        # 1. Lecture du Catalogue (valeurs + formules), en-tête détecté automatiquement
-        ws_cat = classeur.worksheet("Catalogue")
-        valeurs = ws_cat.get_all_values()
-        formules = ws_cat.get_all_values(value_render_option="FORMULA")
+        # 2. Détection automatique de la ligne d'en-tête contenant "Désignation"
+        header_row = 0
+        for i, row in df_raw.iterrows():
+            if "Désignation" in row.values:
+                header_row = i + 1
+                break
 
-        h = _trouver_entete(valeurs, ["désignation"])
-        if h is None:
-            h = _trouver_entete(valeurs, ["designation"])
-        if h is None:
-            raise ValueError("Ligne d'en-tête introuvable (colonne Désignation).")
+        # Re-lecture propre avec la bonne ligne d'en-tête
+        df_cat = conn.read(worksheet="Catalogue", skiprows=header_row, ttl=0)
+        df_cat = df_cat.dropna(subset=["Désignation"])
 
-        entetes = [str(x).strip().lower() for x in valeurs[h]]
-
-        def col(*noms):
-            for nom in noms:
-                for i, e in enumerate(entetes):
-                    if nom in e:
-                        return i
-            return None
-
-        i_desig = col("désignation", "designation")
-        i_stock = col("stock actuel")
-        i_sorties = col("sorties")
-        i_code = col("code article")
-
-        def est_formule(r, c):
-            return len(formules[r]) > c and str(formules[r][c]).startswith("=")
-
-        # 2. Calcul des mises à jour (on ne touche jamais une cellule contenant une formule)
-        maj = []
-        codes = {}
+        # 3. Traitement des articles du panier
         for item in panier:
-            nom = str(item["Désignation"]).strip().lower()
+            desig = str(item["Désignation"]).strip()
             qte = int(item["Quantité"])
 
-            trouve = False
-            for r in range(h + 1, len(valeurs)):
-                ligne = valeurs[r]
-                if len(ligne) > i_desig and ligne[i_desig].strip().lower() == nom:
-                    trouve = True
-                    ligne.extend([""] * (len(entetes) - len(ligne)))
+            masque = df_cat["Désignation"].astype(str).str.strip() == desig
+            idx = df_cat[masque].index
 
-                    if i_code is not None:
-                        codes[nom] = ligne[i_code]
+            if not idx.empty:
+                i = idx[0]
 
-                    if i_sorties is not None and not est_formule(r, i_sorties):
-                        nv = _vers_nombre(ligne[i_sorties]) + qte
-                        ligne[i_sorties] = str(nv)
-                        maj.append({"range": gspread.utils.rowcol_to_a1(r + 1, i_sorties + 1), "values": [[nv]]})
+                # Mise à jour des Sorties
+                sorties_act = df_cat.at[i, "Sorties"] if "Sorties" in df_cat.columns and pd.notna(df_cat.at[i, "Sorties"]) else 0
+                digits_sorties = "".join(c for c in str(sorties_act) if c.isdigit())
+                val_sorties = int(digits_sorties) if digits_sorties else 0
+                df_cat.at[i, "Sorties"] = val_sorties + qte
 
-                    if i_stock is not None and not est_formule(r, i_stock):
-                        nv = _vers_nombre(ligne[i_stock]) - qte
-                        ligne[i_stock] = str(nv)
-                        maj.append({"range": gspread.utils.rowcol_to_a1(r + 1, i_stock + 1), "values": [[nv]]})
-                    break
+                # Mise à jour du Stock Actuel (si colonne présente)
+                if "Stock Actuel" in df_cat.columns:
+                    stock_act = df_cat.at[i, "Stock Actuel"] if pd.notna(df_cat.at[i, "Stock Actuel"]) else 0
+                    digits_stock = "".join(c for c in str(stock_act) if c.isdigit())
+                    val_stock = int(digits_stock) if digits_stock else 0
+                    df_cat.at[i, "Stock Actuel"] = val_stock - qte
 
-            if not trouve:
-                st.warning(f"Article introuvable dans le Catalogue : {item['Désignation']}")
-
-        if maj:
-            ws_cat.batch_update(maj, value_input_option="USER_ENTERED")
-
-        # 3. Enregistrement dans l'onglet Mouvements (ajout en bas, sans toucher l'existant)
-        try:
-            ws_mouv = classeur.worksheet("Mouvements")
-            val_m = ws_mouv.get_all_values()
-            hm = _trouver_entete(val_m, ["date", "type"])
-            if hm is None:
-                raise ValueError("En-tête de l'onglet Mouvements introuvable.")
-            entetes_m = [str(x).strip().lower() for x in val_m[hm]]
-
-            date_jour = datetime.now().strftime("%Y-%m-%d")
-            lignes = []
-            for item in panier:
-                desig = str(item["Désignation"]).strip()
-                donnees = {
-                    "date": date_jour,
-                    "type mouvement": "Sortie",
-                    "code article": codes.get(desig.lower()) or f"ART-{desig[:3].upper()}",
-                    "désignation": desig,
-                    "catégorie": str(item.get("Catégorie", "")),
-                    "quantité": int(item["Quantité"]),
-                    "prix unitaire (fcfa)": float(item["Prix Unitaire"]),
-                    "total fcfa": float(item["Total"]),
-                    "client / fournisseur": str(nom_client),
-                }
-                lignes.append([donnees.get(e, "") for e in entetes_m])
-
-            ws_mouv.append_rows(lignes, value_input_option="USER_ENTERED")
-        except Exception as e_mouv:
-            st.warning(f"Stock Catalogue mis à jour, mais enregistrement Mouvements ignoré : {e_mouv}")
+        # 4. Sauvegarde dans Google Sheets sans arguments incompatibles
+        df_cat = df_cat.fillna("")
+        conn.update(worksheet="Catalogue", data=df_cat)
 
         st.cache_data.clear()
         return True
