@@ -604,77 +604,90 @@ with tab1:
                                     st.rerun()
 
 # --- GESTION DU PANIER & VALIDATION DE LA VENTE ---
-# --- BOUTON DE VALIDATION DE LA VENTE ---
-if st.button("✅ Valider la Vente", type="primary", use_container_width=True):
-    if not st.session_state.panier:
-        st.warning("⚠️ Le panier est vide !")
-    else:
-        with st.spinner("Enregistrement de la vente et mise à jour des stocks en cours..."):
-            nom_client_final = nom_client if 'nom_client' in locals() and nom_client else "Client Comptoir"
-            
-            # 1. Mise à jour du Catalogue
-            succes = enregistrer_vente_excel(st.session_state.panier, nom_client_final)
+# La section et le bouton de validation ne s'affichent QUE si le panier contient des articles
+if st.session_state.panier:
+    st.markdown("---")
+    st.subheader("🛒 Panier Actuel")
+    
+    # Affichage du panier sous forme de tableau
+    df_panier = pd.DataFrame(st.session_state.panier)
+    st.dataframe(df_panier, use_container_width=True)
+    
+    total_panier = sum(item.get("Total", 0) for item in st.session_state.panier)
+    st.markdown(f"### **Total Général : {total_panier:,.0f} FCFA**")
 
-            # 2. Enregistrement dans l'onglet Mouvements
-            if succes:
-                try:
-                    # skiprows=2 pour démarrer à la ligne 3 (vrais entêtes)
+    # Champ pour le nom du client
+    nom_client = st.text_input("Nom du Client (optionnel) :", value="Client Comptoir")
+
+    col_val, col_vider = st.columns([2, 1])
+
+    with col_val:
+        # Bouton à taille normale (use_container_width=False)
+        if st.button("✅ Valider la Vente", type="primary"):
+            with st.spinner("Enregistrement de la vente et mise à jour des stocks..."):
+                nom_client_final = nom_client if nom_client.strip() else "Client Comptoir"
+                
+                # 1. Mise à jour du Catalogue
+                succes = enregistrer_vente_excel(st.session_state.panier, nom_client_final)
+
+                # 2. Enregistrement dans l'onglet Mouvements
+                if succes:
                     try:
-                        df_mouvements = conn.read(worksheet="Mouvements", skiprows=2, ttl=0)
-                    except Exception:
-                        df_mouvements = pd.DataFrame()
+                        try:
+                            df_mouvements = conn.read(worksheet="Mouvements", skiprows=2, ttl=0)
+                        except Exception:
+                            df_mouvements = pd.DataFrame()
 
-                    date_jour = datetime.now().strftime("%Y-%m-%d")
-                    nouvelles_lignes = []
-                    
-                    for item in st.session_state.panier:
-                        desig = str(item.get("Désignation", ""))
-                        qte = int(item.get("Quantité", item.get("quantite", 1)))
-                        pu = float(item.get("Prix Unitaire", item.get("prix_unitaire", 0)))
-                        tot = float(item.get("Total", item.get("total", qte * pu)))
-                        code_art = str(item.get("Code Article", item.get("Code", f"ART-{desig[:3].upper()}")))
-                        cat_art = str(item.get("Catégorie", item.get("categorie", "")))
+                        date_jour = datetime.now().strftime("%Y-%m-%d")
+                        nouvelles_lignes = []
+                        
+                        for item in st.session_state.panier:
+                            desig = str(item.get("Désignation", ""))
+                            qte = int(item.get("Quantité", item.get("quantite", 1)))
+                            pu = float(item.get("Prix Unitaire", item.get("prix_unitaire", 0)))
+                            tot = float(item.get("Total", item.get("total", qte * pu)))
+                            code_art = str(item.get("Code Article", item.get("Code", f"ART-{desig[:3].upper()}")))
+                            cat_art = str(item.get("Catégorie", item.get("categorie", "")))
 
-                        nouvelles_lignes.append({
-                            "Date": str(date_jour),
-                            "Type Mouvement": "Sortie",
-                            "Code Article": code_art,
-                            "Désignation": desig,
-                            "Catégorie": cat_art,
-                            "Quantité": qte,
-                            "Prix Unitaire (FCFA)": pu,
-                            "Total FCFA": tot,
-                            "Client / Fournisseur": str(nom_client_final)
-                        })
-                    
-                    df_nouv = pd.DataFrame(nouvelles_lignes)
-                    
-                    # Fusion et nettoyage des colonnes vides / NaN
-                    df_final_mouv = pd.concat([df_mouvements, df_nouv], ignore_index=True)
-                    df_final_mouv = df_final_mouv.dropna(how="all", axis=1)
-                    df_final_mouv = df_final_mouv.fillna("")
-                    
-                    # Envoi propre sans arguments invalides
-                    conn.update(worksheet="Mouvements", data=df_final_mouv)
-                except Exception as e_mouv:
-                    st.warning(f"Stock mis à jour, mais enregistrement Mouvements échoué : {e_mouv}")
+                            nouvelles_lignes.append({
+                                "Date": str(date_jour),
+                                "Type Mouvement": "Sortie",
+                                "Code Article": code_art,
+                                "Désignation": desig,
+                                "Catégorie": cat_art,
+                                "Quantité": qte,
+                                "Prix Unitaire (FCFA)": pu,
+                                "Total FCFA": tot,
+                                "Client / Fournisseur": str(nom_client_final)
+                            })
+                        
+                        df_nouv = pd.DataFrame(nouvelles_lignes)
+                        df_final_mouv = pd.concat([df_mouvements, df_nouv], ignore_index=True)
+                        df_final_mouv = df_final_mouv.dropna(how="all", axis=1).fillna("")
+                        
+                        conn.update(worksheet="Mouvements", data=df_final_mouv)
+                    except Exception as e_mouv:
+                        st.warning(f"Stock Catalogue mis à jour, mais enregistrement Mouvements ignoré : {e_mouv}")
 
-                st.success("🎉 Vente enregistrée et stock mis à jour avec succès dans Google Sheets !")
+                    # 3. Sauvegarde temporaire pour le Reçu
+                    st.session_state["derniere_vente"] = {
+                        "client": nom_client_final,
+                        "articles": list(st.session_state.panier),
+                        "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    }
 
-                # 3. Sauvegarde temporaire de la vente pour le Reçu
-                st.session_state["derniere_vente"] = {
-                    "client": nom_client_final,
-                    "articles": list(st.session_state.panier),
-                    "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                }
+                    # 4. Vidage du panier et rechargement
+                    st.session_state.panier = []
+                    st.success("🎉 Vente enregistrée avec succès !")
+                    st.rerun()
 
-                # 4. Vidage du panier et rechargement
-                st.session_state.panier = []
-                st.rerun()
-            else:
-                st.error("❌ Échec de la mise à jour du Catalogue.")
+    with col_vider:
+        if st.button("🗑️ Vider le panier"):
+            st.session_state.panier = []
+            st.rerun()
 
-# --- AFFICHAGE DU REÇU DE LA DERNIÈRE VENTE ---
+
+# --- AFFICHAGE DU REÇU DE CAISSE (Abonnement après validation) ---
 if "derniere_vente" in st.session_state and st.session_state["derniere_vente"]:
     vente = st.session_state["derniere_vente"]
     
@@ -686,7 +699,7 @@ if "derniere_vente" in st.session_state and st.session_state["derniere_vente"]:
     df_recu = pd.DataFrame(vente["articles"])
     st.dataframe(df_recu[["Désignation", "Quantité", "Prix Unitaire", "Total"]], use_container_width=True)
 
-    total_recu = sum(item["Total"] for item in vente["articles"])
+    total_recu = sum(item.get("Total", 0) for item in vente["articles"])
     st.markdown(f"### **Total Payé : {total_recu:,.0f} FCFA**")
 
     if st.button("🧹 Fermer le reçu"):
