@@ -488,8 +488,12 @@ with tab1:
                 </div>
                 """, unsafe_allow_html=True)
 # 🛒 SAISIE DE LA QUANTITÉ ET DU PRIX
-                # 1. Détection dynamique de la colonne de désignation/article
-                col_desig = [c for c in df_stock.columns if any(k in c.lower() for k in ['designation', 'désignation', 'article', 'nom', 'produit'])][0]
+                # 1. Identification sécurisée de la colonne de désignation
+                if 'c_desig' in locals() and c_desig in df_stock.columns:
+                    col_desig = c_desig
+                else:
+                    match_desig = [c for c in df_stock.columns if any(k in str(c).lower() for k in ['designation', 'désignation', 'article', 'nom', 'produit'])]
+                    col_desig = match_desig[0] if match_desig else df_stock.columns[1]
 
                 # 2. Récupération de la ligne correspondant à l'article choisi
                 df_filtr = df_stock[df_stock[col_desig].astype(str) == str(article_choisi)]
@@ -497,9 +501,18 @@ with tab1:
                 if not df_filtr.empty:
                     row_article = df_filtr.iloc[0]
 
-                    # Détection dynamique des colonnes de stock et prix
-                    col_stock_name = [c for c in df_stock.columns if 'stock' in c.lower() or 'dispo' in c.lower() or 'qte' in c.lower()][0]
-                    col_prix_name = [c for c in df_stock.columns if 'conseil' in c.lower() or 'prix' in c.lower() or 'vente' in c.lower()][0]
+                    # Identification des colonnes de stock et de prix
+                    if 'c_stock' in locals() and c_stock in df_stock.columns:
+                        col_stock_name = c_stock
+                    else:
+                        match_stock = [c for c in df_stock.columns if any(k in str(c).lower() for k in ['stock', 'dispo', 'qte', 'quantite', 'quantité'])]
+                        col_stock_name = match_stock[0] if match_stock else df_stock.columns[3]
+
+                    if 'c_prix' in locals() and c_prix in df_stock.columns:
+                        col_prix_name = c_prix
+                    else:
+                        match_prix = [c for c in df_stock.columns if any(k in str(c).lower() for k in ['conseil', 'prix', 'vente'])]
+                        col_prix_name = match_prix[0] if match_prix else df_stock.columns[2]
 
                     # Extraction du stock (nettoyage numérique strict)
                     raw_stock = row_article[col_stock_name] if pd.notna(row_article[col_stock_name]) else 0
@@ -512,15 +525,19 @@ with tab1:
                     prix_conseille_num = float(prix_cons_clean) if prix_cons_clean else 0.0
 
                     # Extraction du prix plancher
-                    cols_plancher = [c for c in df_stock.columns if 'plan' in c.lower() or 'min' in c.lower()]
-                    if cols_plancher:
-                        raw_prix_plan = row_article[cols_plancher[0]] if pd.notna(row_article[cols_plancher[0]]) else 0
-                        prix_plan_clean = "".join(c for c in str(raw_prix_plan) if c.isdigit())
+                    if 'c_prix_plan' in locals() and c_prix_plan in df_stock.columns:
+                        col_plan_name = c_prix_plan
+                    else:
+                        match_plan = [c for c in df_stock.columns if any(k in str(c).lower() for k in ['plan', 'min', 'plancher'])]
+                        col_plan_name = match_plan[0] if match_plan else None
+
+                    if col_plan_name and pd.notna(row_article[col_plan_name]):
+                        prix_plan_clean = "".join(c for c in str(row_article[col_plan_name]) if c.isdigit())
                         prix_plancher_num = float(prix_plan_clean) if prix_plan_clean else 0.0
                     else:
                         prix_plancher_num = 0.0
 
-                    # 3. Saisie Quantité, Prix et Bouton
+                    # 3. Champs de Saisie Quantité, Prix et Bouton d'ajout
                     col_qte, col_prix, col_btn = st.columns([1, 1, 1])
                     
                     with col_qte:
@@ -543,8 +560,8 @@ with tab1:
                             elif qte > stock_actuel_val:
                                 st.warning(f"⚠️ Stock insuffisant ! Disponible : {stock_actuel_val}")
                             else:
-                                cols_cat = [c for c in df_stock.columns if 'cat' in c.lower()]
-                                cat_val = str(row_article[cols_cat[0]]) if cols_cat and pd.notna(row_article[cols_cat[0]]) else ""
+                                col_cat_name = c_cat if 'c_cat' in locals() and c_cat in df_stock.columns else None
+                                cat_val = str(row_article[col_cat_name]) if col_cat_name and pd.notna(row_article[col_cat_name]) else ""
 
                                 st.session_state.panier.append({
                                     "Désignation": article_choisi,
