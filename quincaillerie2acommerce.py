@@ -414,17 +414,21 @@ def enregistrer_reapprovisionnement_sheets(desig, qte_recue, nom_fournisseur, pr
             st.error(f"❌ Erreur sur l'onglet Mouvements : {e_mouv}")
             return False
 
-# Exemple de structure correcte autour de la ligne 418 :
-try:
-    # Vos opérations sur Google Sheets ou le DataFrame
-    ws_mouv = classeur.worksheet("Mouvements")
-    # ...
-except Exception as e:
-    st.error(f"Erreur : {e}")
+if lignes_a_ajouter:
+            res = ws_mouv.append_rows(lignes_a_ajouter, value_input_option="USER_ENTERED")
+            st.info(f"Résultat écriture : {res}") # Message de confirmation
 
-# Le 'if' vient APRÈS la fermeture du bloc try / except
+    except Exception as e_mouv:
+        st.error(f"❌ Erreur sur l'onglet Mouvements : {e_mouv}")
+        return False
+
+
+# --- APPLICATION PRINCIPALE ---
 if df.empty:
-    st.warning("Aucune donnée disponible.")
+    st.stop()
+
+if "panier" not in st.session_state:
+    st.session_state.panier = []
 # --- APPLICATION PRINCIPALE ---
 if df.empty:
     st.stop()
