@@ -256,40 +256,120 @@ def generer_recu_pdf(nom_client, panier, total_general):
     return nom_fichier_pdf
 
 
+# --- OUTILS DE LECTURE DU SHEET ---
+def _trouver_entete(donnees, mots):
+    """Retourne l'index de la première ligne contenant tous les mots donnés."""
+    for i, row in enumerate(donnees):
+        txt = " ".join(str(v).lower() for v in row)
+        if all(m in txt for m in mots):
+            return i
+    return None
+
+
+def _vers_nombre(val):
+    """Convertit '1 200', '12,0' ou '' en entier."""
+    partie = str(val).replace(",", ".").split(".")[0]
+    chiffres = "".join(c for c in partie if c.isdigit())
+    return int(chiffres) if chiffres else 0
+
+
 # --- FONCTION DE MISE À JOUR DU STOCK (VENTE) ---
 def enregistrer_vente_excel(panier, nom_client):
     try:
-        # 1. Lecture du Catalogue (ligne 3 des entêtes)
-        df_cat = conn.read(worksheet="Catalogue", skiprows=2, ttl=0)
-        df_cat = df_cat.dropna(subset=["Désignation"])
+        client = obtenir_connexion_gsheets()
+        classeur = client.open_by_key("1XVl4h6XZ_-RAZio-ScbbSOwvWXmT3S49vtuKM66EhtM")
 
-        # 2. Mise à jour des sorties et des stocks
+        # 1. Lecture du Catalogue (valeurs + formules), en-tête détecté automatiquement
+        ws_cat = classeur.worksheet("Catalogue")
+        valeurs = ws_cat.get_all_values()
+        formules = ws_cat.get_all_values(value_render_option="FORMULA")
+
+        h = _trouver_entete(valeurs, ["désignation"])
+        if h is None:
+            h = _trouver_entete(valeurs, ["designation"])
+        if h is None:
+            raise ValueError("Ligne d'en-tête introuvable (colonne Désignation).")
+
+        entetes = [str(x).strip().lower() for x in valeurs[h]]
+
+        def col(*noms):
+            for nom in noms:
+                for i, e in enumerate(entetes):
+                    if nom in e:
+                        return i
+            return None
+
+        i_desig = col("désignation", "designation")
+        i_stock = col("stock actuel")
+        i_sorties = col("sorties")
+        i_code = col("code article")
+
+        def est_formule(r, c):
+            return len(formules[r]) > c and str(formules[r][c]).startswith("=")
+
+        # 2. Calcul des mises à jour (on ne touche jamais une cellule contenant une formule)
+        maj = []
+        codes = {}
         for item in panier:
-            desig = str(item["Désignation"]).strip()
+            nom = str(item["Désignation"]).strip().lower()
             qte = int(item["Quantité"])
 
-            masque = df_cat["Désignation"].astype(str).str.strip() == desig
-            idx = df_cat[masque].index
+            trouve = False
+            for r in range(h + 1, len(valeurs)):
+                ligne = valeurs[r]
+                if len(ligne) > i_desig and ligne[i_desig].strip().lower() == nom:
+                    trouve = True
+                    ligne.extend([""] * (len(entetes) - len(ligne)))
 
-            if not idx.empty:
-                i = idx[0]
+                    if i_code is not None:
+                        codes[nom] = ligne[i_code]
 
-                # Calcul des Sorties
-                sorties_act = df_cat.at[i, "Sorties"] if "Sorties" in df_cat.columns and pd.notna(df_cat.at[i, "Sorties"]) else 0
-                digits_sorties = "".join(c for c in str(sorties_act) if c.isdigit())
-                val_sorties = int(digits_sorties) if digits_sorties else 0
-                df_cat.at[i, "Sorties"] = val_sorties + qte
+                    if i_sorties is not None and not est_formule(r, i_sorties):
+                        nv = _vers_nombre(ligne[i_sorties]) + qte
+                        ligne[i_sorties] = str(nv)
+                        maj.append({"range": gspread.utils.rowcol_to_a1(r + 1, i_sorties + 1), "values": [[nv]]})
 
-                # Calcul du Stock Actuel
-                if "Stock Actuel" in df_cat.columns:
-                    stock_act = df_cat.at[i, "Stock Actuel"] if pd.notna(df_cat.at[i, "Stock Actuel"]) else 0
-                    digits_stock = "".join(c for c in str(stock_act) if c.isdigit())
-                    val_stock = int(digits_stock) if digits_stock else 0
-                    df_cat.at[i, "Stock Actuel"] = val_stock - qte
+                    if i_stock is not None and not est_formule(r, i_stock):
+                        nv = _vers_nombre(ligne[i_stock]) - qte
+                        ligne[i_stock] = str(nv)
+                        maj.append({"range": gspread.utils.rowcol_to_a1(r + 1, i_stock + 1), "values": [[nv]]})
+                    break
 
-        # 3. Envoi à Google Sheets (sans argument 'range')
-        df_cat = df_cat.fillna("")
-        conn.update(worksheet="Catalogue", data=df_cat)
+            if not trouve:
+                st.warning(f"Article introuvable dans le Catalogue : {item['Désignation']}")
+
+        if maj:
+            ws_cat.batch_update(maj, value_input_option="USER_ENTERED")
+
+        # 3. Enregistrement dans l'onglet Mouvements (ajout en bas, sans toucher l'existant)
+        try:
+            ws_mouv = classeur.worksheet("Mouvements")
+            val_m = ws_mouv.get_all_values()
+            hm = _trouver_entete(val_m, ["date", "type"])
+            if hm is None:
+                raise ValueError("En-tête de l'onglet Mouvements introuvable.")
+            entetes_m = [str(x).strip().lower() for x in val_m[hm]]
+
+            date_jour = datetime.now().strftime("%Y-%m-%d")
+            lignes = []
+            for item in panier:
+                desig = str(item["Désignation"]).strip()
+                donnees = {
+                    "date": date_jour,
+                    "type mouvement": "Sortie",
+                    "code article": codes.get(desig.lower()) or f"ART-{desig[:3].upper()}",
+                    "désignation": desig,
+                    "catégorie": str(item.get("Catégorie", "")),
+                    "quantité": int(item["Quantité"]),
+                    "prix unitaire (fcfa)": float(item["Prix Unitaire"]),
+                    "total fcfa": float(item["Total"]),
+                    "client / fournisseur": str(nom_client),
+                }
+                lignes.append([donnees.get(e, "") for e in entetes_m])
+
+            ws_mouv.append_rows(lignes, value_input_option="USER_ENTERED")
+        except Exception as e_mouv:
+            st.warning(f"Stock Catalogue mis à jour, mais enregistrement Mouvements ignoré : {e_mouv}")
 
         st.cache_data.clear()
         return True
@@ -302,56 +382,101 @@ def enregistrer_vente_excel(panier, nom_client):
 # --- FONCTION DE RÉAPPROVISIONNEMENT (ENTRÉE DE STOCK) ---
 def enregistrer_reapprovisionnement_sheets(desig, qte_recue, nom_fournisseur, prix_u):
     try:
-        df_cat = conn.read(spreadsheet=URL_SHEET, worksheet="Catalogue", skiprows=3, ttl=0)
-        df_cat = df_cat.dropna(subset=["Désignation"])
+        client = obtenir_connexion_gsheets()
+        classeur = client.open_by_key("1XVl4h6XZ_-RAZio-ScbbSOwvWXmT3S49vtuKM66EhtM")
 
+        # 1. Lecture du Catalogue (valeurs + formules), en-tête détecté automatiquement
+        ws_cat = classeur.worksheet("Catalogue")
+        valeurs = ws_cat.get_all_values()
+        formules = ws_cat.get_all_values(value_render_option="FORMULA")
+
+        h = _trouver_entete(valeurs, ["désignation"])
+        if h is None:
+            h = _trouver_entete(valeurs, ["designation"])
+        if h is None:
+            raise ValueError("Ligne d'en-tête introuvable (colonne Désignation).")
+
+        entetes = [str(x).strip().lower() for x in valeurs[h]]
+
+        def col(*noms):
+            for nom in noms:
+                for i, e in enumerate(entetes):
+                    if nom in e:
+                        return i
+            return None
+
+        i_desig = col("désignation", "designation")
+        i_stock = col("stock actuel")
+        i_entrees = col("entrées", "entrees")
+        i_seuil = col("seuil alerte")
+        i_statut = col("statut stock", "statut")
+        i_code = col("code article")
+
+        def est_formule(r, c):
+            return len(formules[r]) > c and str(formules[r][c]).startswith("=")
+
+        # 2. Recherche de l'article
+        nom = str(desig).strip().lower()
+        r_trouve = None
+        for r in range(h + 1, len(valeurs)):
+            if len(valeurs[r]) > i_desig and valeurs[r][i_desig].strip().lower() == nom:
+                r_trouve = r
+                break
+
+        if r_trouve is None:
+            st.warning(f"Article introuvable dans le Catalogue : {desig}")
+            return False
+
+        ligne = valeurs[r_trouve]
+        ligne.extend([""] * (len(entetes) - len(ligne)))
+
+        # 3. Mises à jour (jamais sur une cellule contenant une formule)
+        maj = []
+        nouveau_stock = _vers_nombre(ligne[i_stock]) if i_stock is not None else 0
+
+        if i_entrees is not None and not est_formule(r_trouve, i_entrees):
+            nv = _vers_nombre(ligne[i_entrees]) + int(qte_recue)
+            maj.append({"range": gspread.utils.rowcol_to_a1(r_trouve + 1, i_entrees + 1), "values": [[nv]]})
+
+        if i_stock is not None and not est_formule(r_trouve, i_stock):
+            nouveau_stock = _vers_nombre(ligne[i_stock]) + int(qte_recue)
+            maj.append({"range": gspread.utils.rowcol_to_a1(r_trouve + 1, i_stock + 1), "values": [[nouveau_stock]]})
+
+        if i_statut is not None and i_seuil is not None and not est_formule(r_trouve, i_statut):
+            seuil = _vers_nombre(ligne[i_seuil])
+            statut = "RÉAPPROVISIONNER" if nouveau_stock <= seuil else "OK"
+            maj.append({"range": gspread.utils.rowcol_to_a1(r_trouve + 1, i_statut + 1), "values": [[statut]]})
+
+        if maj:
+            ws_cat.batch_update(maj, value_input_option="USER_ENTERED")
+
+        # 4. Enregistrement dans l'onglet Mouvements (ajout en bas)
         try:
-            df_mouv = conn.read(spreadsheet=URL_SHEET, worksheet="Mouvements", skiprows=3, ttl=0)
-        except Exception:
-            df_mouv = pd.DataFrame()
+            ws_mouv = classeur.worksheet("Mouvements")
+            val_m = ws_mouv.get_all_values()
+            hm = _trouver_entete(val_m, ["date", "type"])
+            if hm is None:
+                raise ValueError("En-tête de l'onglet Mouvements introuvable.")
+            entetes_m = [str(x).strip().lower() for x in val_m[hm]]
 
-        idx = df_cat[df_cat["Désignation"] == desig].index
-
-        if not idx.empty:
-            i = idx[0]
-
-            entrees_actuelles = df_cat.at[i, "Entrées"] if pd.notna(df_cat.at[i, "Entrées"]) else 0
-            nouvelle_entree = entrees_actuelles + qte_recue
-            df_cat.at[i, "Entrées"] = nouvelle_entree
-
-            sorties_actuelles = df_cat.at[i, "Sorties"] if pd.notna(df_cat.at[i, "Sorties"]) else 0
-            nouveau_stock = nouvelle_entree - sorties_actuelles
-            df_cat.at[i, "Stock Actuel"] = nouveau_stock
-
-            seuil = df_cat.at[i, "Seuil Alerte"]
-            if pd.notna(seuil) and nouveau_stock <= seuil:
-                df_cat.at[i, "Statut Stock"] = "RÉAPPROVISIONNER"
-            else:
-                df_cat.at[i, "Statut Stock"] = "OK"
-
-            code_art = df_cat.at[i, "Code Article"] if "Code Article" in df_cat.columns else ""
-
-            nouvelle_ligne_mouv = {
-                "Date": datetime.now().strftime("%Y-%m-%d"),
-                "Type Mouvement": "Entrée",
-                "Code Article": code_art,
-                "Catégorie": desig,
-                "Quantité": qte_recue,
-                "Prix Unitaire (FCFA)": prix_u,
-                "Total FCFA": qte_recue * prix_u,
-                "Client / Fournisseur": nom_fournisseur,
+            code_art = ligne[i_code] if i_code is not None and ligne[i_code] else f"ART-{str(desig)[:3].upper()}"
+            donnees = {
+                "date": datetime.now().strftime("%Y-%m-%d"),
+                "type mouvement": "Entrée",
+                "code article": code_art,
+                "désignation": str(desig),
+                "catégorie": str(desig),
+                "quantité": int(qte_recue),
+                "prix unitaire (fcfa)": prix_u,
+                "total fcfa": int(qte_recue) * prix_u,
+                "client / fournisseur": nom_fournisseur,
             }
+            ws_mouv.append_row([donnees.get(e, "") for e in entetes_m], value_input_option="USER_ENTERED")
+        except Exception as e_mouv:
+            st.warning(f"Stock Catalogue mis à jour, mais enregistrement Mouvements ignoré : {e_mouv}")
 
-            df_mouv = pd.concat([df_mouv, pd.DataFrame([nouvelle_ligne_mouv])], ignore_index=True)
-
-            conn.update(spreadsheet=URL_SHEET, worksheet="Catalogue", data=df_cat, range="A4")
-            conn.update(spreadsheet=URL_SHEET, worksheet="Mouvements", data=df_mouv, range="A4")
-            st.cache_data.clear()
-
-            return True
-
-        st.warning(f"Article introuvable dans le Catalogue : {desig}")
-        return False
+        st.cache_data.clear()
+        return True
 
     except Exception as e:
         st.error(f"Erreur lors de l'enregistrement du réapprovisionnement : {e}")
@@ -582,45 +707,8 @@ with tab1:
                     # 1. Mise à jour du Catalogue
                     succes = enregistrer_vente_excel(st.session_state.panier, nom_client_final)
 
-                    # 2. Enregistrement dans l'onglet Mouvements
+                    # 2. Reçu et nettoyage (Mouvements déjà enregistré dans la fonction)
                     if succes:
-                        try:
-                            try:
-                                df_mouvements = conn.read(worksheet="Mouvements", skiprows=2, ttl=0)
-                            except Exception:
-                                df_mouvements = pd.DataFrame()
-
-                            date_jour = datetime.now().strftime("%Y-%m-%d")
-                            nouvelles_lignes = []
-
-                            for item in st.session_state.panier:
-                                desig = str(item.get("Désignation", ""))
-                                qte = int(item.get("Quantité", item.get("quantite", 1)))
-                                pu = float(item.get("Prix Unitaire", item.get("prix_unitaire", 0)))
-                                tot = float(item.get("Total", item.get("total", qte * pu)))
-                                code_art = str(item.get("Code Article", item.get("Code", f"ART-{desig[:3].upper()}")))
-                                cat_art = str(item.get("Catégorie", item.get("categorie", "")))
-
-                                nouvelles_lignes.append({
-                                    "Date": str(date_jour),
-                                    "Type Mouvement": "Sortie",
-                                    "Code Article": code_art,
-                                    "Désignation": desig,
-                                    "Catégorie": cat_art,
-                                    "Quantité": qte,
-                                    "Prix Unitaire (FCFA)": pu,
-                                    "Total FCFA": tot,
-                                    "Client / Fournisseur": str(nom_client_final)
-                                })
-
-                            df_nouv = pd.DataFrame(nouvelles_lignes)
-                            df_final_mouv = pd.concat([df_mouvements, df_nouv], ignore_index=True)
-                            df_final_mouv = df_final_mouv.dropna(how="all", axis=1).fillna("")
-
-                            conn.update(worksheet="Mouvements", data=df_final_mouv)
-                        except Exception as e_mouv:
-                            st.warning(f"Stock Catalogue mis à jour, mais enregistrement Mouvements ignoré : {e_mouv}")
-
                         # 3. Sauvegarde temporaire pour le Reçu
                         st.session_state["derniere_vente"] = {
                             "client": nom_client_final,
