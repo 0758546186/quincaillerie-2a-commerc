@@ -307,9 +307,7 @@ def enregistrer_vente_excel(panier, nom_client="Client Comptoir"):
             ws_mouv.update(range_name=plage, values=lignes_a_ajouter, value_input_option="USER_ENTERED")
             st.success(f"✅ Vente inscrite à la ligne {prochaine_ligne} de l'onglet Mouvements !")
 
-    except Exception as e_mouv:
-        st.error(f"❌ Erreur lors de l'écriture dans Mouvements : {e_mouv}")
-        return False
+
 
     # --- MISE À JOUR DU CATALOGUE (STOCK) ---
     try:
