@@ -1,5 +1,5 @@
 import pandas as pd
-import streamlit as st 
+import streamlit as st
 import urllib.parse
 from datetime import datetime
 import os
@@ -8,7 +8,6 @@ import json
 from streamlit_gsheets import GSheetsConnection
 import gspread
 from google.oauth2.service_account import Credentials
-
 
 
 # --- CONFIGURATION DE LA PAGE STREAMLIT ---
@@ -25,10 +24,8 @@ URL_SHEET = "https://docs.google.com/spreadsheets/d/1XVl4h6XZ_-RAZio-ScbbSOwvWXm
 if "gcp_service_account" in st.secrets:
     service_account_info = dict(st.secrets["gcp_service_account"])
 
-#  NOUVELLE LIGNE (qui charge vos secrets de compte de service)
-from streamlit_gsheets import GSheetsConnection
-
 conn = st.connection("gsheets", type=GSheetsConnection)
+
 
 # --- FONCTION DE CHARGEMENT DES DONNÉES DEPUIS GOOGLE SHEETS ---
 @st.cache_data(ttl=60)
@@ -76,9 +73,9 @@ def mettre_a_jour_stock_gsheet(panier, mode="vente"):
         client = obtenir_connexion_gsheets()
         SHEET_ID = "1XVl4h6XZ_-RAZio-ScbbSOwvWXmT3S49vtuKM66EhtM"
         sheet = client.open_by_key(SHEET_ID).worksheet("Catalogue")
-        
+
         donnees = sheet.get_all_values()
-        
+
         header_idx = None
         headers = []
         for i, row in enumerate(donnees):
@@ -124,8 +121,6 @@ def mettre_a_jour_stock_gsheet(panier, mode="vente"):
 
 
 # --- CHARGEMENT INITIAL DU DATAFRAME ---
-df = charger_donnees()
-# Chargement initial du dataframe
 df_initial = charger_donnees()
 df = df_initial if df_initial is not None else pd.DataFrame()
 
@@ -136,8 +131,10 @@ seuil_minimum = 5
 
 if not df.empty and "Stock Actuel" in df.columns:
     # Convertir la colonne Stock Actuel en nombre (remplace les erreurs/textes par 0)
-    df["Stock Actuel Num"] = pd.to_numeric(df["Stock Actuel"].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
-    
+    df["Stock Actuel Num"] = pd.to_numeric(
+        df["Stock Actuel"].astype(str).str.replace(',', '.'), errors='coerce'
+    ).fillna(0)
+
     # Filtrer les stocks critiques avec la version numérique
     stock_critique = df[df["Stock Actuel Num"] <= seuil_minimum]
 
@@ -191,9 +188,10 @@ def encode_latin1(texte):
         return ""
     if not isinstance(texte, str):
         texte = str(texte)
-    # Remplacer les apostrophes typographiques et espaces insecables fréquents
+    # Remplacer les apostrophes typographiques et espaces insécables fréquents
     texte = texte.replace("’", "'").replace("–", "-")
     return texte.encode('latin-1', 'replace').decode('latin-1')
+
 
 def generer_recu_pdf(nom_client, panier, total_general):
     pdf = FPDF()
@@ -209,17 +207,17 @@ def generer_recu_pdf(nom_client, panier, total_general):
     pdf.cell(0, 6, encode_latin1("Vente de Matériaux de Construction & Outillage"), ln=True, align="C")
     pdf.cell(0, 6, encode_latin1("Angré Château — Abidjan, Côte d'Ivoire"), ln=True, align="C")
     pdf.ln(5)
-    
+
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
     pdf.ln(3)
-    
+
     # Infos Vente & Client
     date_str = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
     pdf.set_font("Helvetica", "B", 10)
     pdf.cell(100, 6, encode_latin1(f"Client : {nom_client}"))
     pdf.cell(0, 6, encode_latin1(f"Date : {date_str}"), ln=True, align="R")
     pdf.ln(5)
-    
+
     # Entête du tableau
     pdf.set_fill_color(230, 230, 230)
     pdf.set_font("Helvetica", "B", 10)
@@ -227,31 +225,31 @@ def generer_recu_pdf(nom_client, panier, total_general):
     pdf.cell(25, 8, encode_latin1("Qté"), border=1, align="C", fill=True)
     pdf.cell(35, 8, encode_latin1(" Unitaire"), border=1, align="R", fill=True)
     pdf.cell(40, 8, encode_latin1("Total FCFA"), border=1, align="R", fill=True, ln=True)
-    
+
     # Lignes du panier
     pdf.set_font("Helvetica", "", 9)
     for item in panier:
         designation = encode_latin1(str(item.get('Désignation', item.get('article', 'Article')))[:45])
         quantite = encode_latin1(str(item.get('Quantité', item.get('quantite', 1))))
-        _unitaire = encode_latin1(f"{item.get(' Unitaire', item.get('prix_unitaire', 0)):,} FCFA")
+        prix_unitaire = encode_latin1(f"{item.get('Prix Unitaire', item.get('prix_unitaire', 0)):,} FCFA")
         total_ligne = encode_latin1(f"{item.get('Total', item.get('total', 0)):,} FCFA")
 
         pdf.cell(90, 7, f" {designation}", border=1)
         pdf.cell(25, 7, quantite, border=1, align="C")
         pdf.cell(35, 7, prix_unitaire, border=1, align="R")
         pdf.cell(40, 7, total_ligne, border=1, align="R", ln=True)
-        
+
     # Total
     pdf.ln(3)
     pdf.set_font("Helvetica", "B", 12)
     pdf.cell(150, 9, encode_latin1("TOTAL À PAYER : "), border=0, align="R")
     pdf.cell(40, 9, encode_latin1(f"{total_general:,} FCFA"), border=1, align="R")
-    
+
     # Pied de page
     pdf.ln(15)
     pdf.set_font("Helvetica", "I", 9)
     pdf.cell(0, 5, encode_latin1("Merci pour votre confiance et à bientôt !"), ln=True, align="C")
-    
+
     os.makedirs("factures", exist_ok=True)
     nom_fichier_pdf = f"factures/Recu_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
     pdf.output(nom_fichier_pdf)
@@ -270,101 +268,29 @@ def enregistrer_vente_excel(panier, nom_client):
             desig = str(item["Désignation"]).strip()
             qte = int(item["Quantité"])
 
-            # Recherche exacte de la ligne correspondant à l'article
             masque = df_cat["Désignation"].astype(str).str.strip() == desig
             idx = df_cat[masque].index
 
             if not idx.empty:
                 i = idx[0]
 
-                # Mise à jour des Sorties
+                # Calcul des Sorties
                 sorties_act = df_cat.at[i, "Sorties"] if "Sorties" in df_cat.columns and pd.notna(df_cat.at[i, "Sorties"]) else 0
                 digits_sorties = "".join(c for c in str(sorties_act) if c.isdigit())
                 val_sorties = int(digits_sorties) if digits_sorties else 0
                 df_cat.at[i, "Sorties"] = val_sorties + qte
 
-                # Mise à jour du Stock Actuel
+                # Calcul du Stock Actuel
                 if "Stock Actuel" in df_cat.columns:
                     stock_act = df_cat.at[i, "Stock Actuel"] if pd.notna(df_cat.at[i, "Stock Actuel"]) else 0
                     digits_stock = "".join(c for c in str(stock_act) if c.isdigit())
                     val_stock = int(digits_stock) if digits_stock else 0
                     df_cat.at[i, "Stock Actuel"] = val_stock - qte
 
-        # 3. Envoi au Google Sheet (sans l'argument range)
+        # 3. Envoi à Google Sheets (sans argument 'range')
         df_cat = df_cat.fillna("")
         conn.update(worksheet="Catalogue", data=df_cat)
 
-        st.cache_data.clear()
-        return True
-
-    except Exception as e:
-        st.error(f"Erreur lors de la mise à jour Google Sheets : {e}")
-        return False
-
-            # Recherche exacte de l'article (insensible aux espaces superflus)
-            idx = df_cat[df_cat["Désignation_clean"] == desig].index
-
-            if not idx.empty:
-                i = idx[0]
-
-                # --- 1. Nettoyage et incrémentation des Sorties ---
-                raw_sorties = df_cat.at[i, "Sorties"] if "Sorties" in df_cat.columns and pd.notna(df_cat.at[i, "Sorties"]) else 0
-                digits_sorties = "".join(c for c in str(raw_sorties) if c.isdigit())
-                sorties_actuelles = int(digits_sorties) if digits_sorties else 0
-                
-                df_cat.at[i, "Sorties"] = sorties_actuelles + qte_vendue
-
-                # --- 2. Mise à jour de Stock Actuel (s'il s'agit d'une valeur fixe et non d'une formule) ---
-                if "Stock Actuel" in df_cat.columns:
-                    raw_stock = df_cat.at[i, "Stock Actuel"] if pd.notna(df_cat.at[i, "Stock Actuel"]) else 0
-                    digits_stock = "".join(c for c in str(raw_stock) if c.isdigit())
-                    stock_actuel_val = int(digits_stock) if digits_stock else 0
-                    
-                    nouveau_stock = stock_actuel_val - qte_vendue
-                    df_cat.at[i, "Stock Actuel"] = nouveau_stock
-
-                    # --- 3. Vérification Seuil Alerte ---
-                    seuil_raw = df_cat.at[i, "Seuil Alerte"] if "Seuil Alerte" in df_cat.columns and pd.notna(df_cat.at[i, "Seuil Alerte"]) else 0
-                    digits_seuil = "".join(c for c in str(seuil_raw) if c.isdigit())
-                    seuil_val = int(digits_seuil) if digits_seuil else 0
-
-                    if "Statut Stock" in df_cat.columns:
-                        if nouveau_stock <= seuil_val:
-                            df_cat.at[i, "Statut Stock"] = "RÉAPPROVISIONNER"
-                        else:
-                            df_cat.at[i, "Statut Stock"] = "OK"
-
-                # Code article
-                code_art = df_cat.at[i, "Code Article"] if "Code Article" in df_cat.columns and pd.notna(df_cat.at[i, "Code Article"]) else f"ART-{desig[:3].upper()}"
-
-            else:
-                code_art = f"ART-{desig[:3].upper()}"
-
-            # Ajout du mouvement
-            nouvelles_lignes_mouv.append({
-                "Date": date_jour,
-                "Type Mouvement": "Sortie",
-                "Code Article": code_art,
-                "Catégorie": item.get("Catégorie", desig),
-                "Quantité": qte_vendue,
-                "Prix Unitaire (FCFA)": prix_u,
-                "Total FCFA": total_vente,
-                "Client / Fournisseur": nom_client,
-            })
-
-        # Nettoyage de la colonne temporaire
-        if "Désignation_clean" in df_cat.columns:
-            df_cat = df_cat.drop(columns=["Désignation_clean"])
-
-        if nouvelles_lignes_mouv:
-            df_nouv_mouv = pd.DataFrame(nouvelles_lignes_mouv)
-            df_mouv = pd.concat([df_mouv, df_nouv_mouv], ignore_index=True)
-
-        # Écriture dans Google Sheets
-        conn.update(spreadsheet=URL_SHEET, worksheet="Catalogue", data=df_cat, range="A4")
-        conn.update(spreadsheet=URL_SHEET, worksheet="Mouvements", data=df_mouv, range="A4")
-
-        # Vidage complet du cache Streamlit
         st.cache_data.clear()
         return True
 
@@ -455,9 +381,8 @@ with tab1:
     with col_recherche:
         st.subheader("🔎 Recherche au Comptoir")
         mot_cle = st.text_input("Saisissez un nom d'article, marque ou catégorie (ex: Ciment, Tuyau, 110) :")
-    # --- RECHERCHE AU COMPTOIR SÉCURISÉE ---
-      # --- RECHERCHE ET SELECTION ARTICLE ---
-     # --- RECHERCHE ET SELECTION ARTICLE ---
+
+        # --- RECHERCHE ET SELECTION ARTICLE ---
         if mot_cle and not df.empty:
             mot_cle_clean = str(mot_cle).strip().lower()
 
@@ -487,29 +412,28 @@ with tab1:
 
             if not resultat.empty:
                 st.success(f"{len(resultat)} article(s) trouvé(s)")
-                
+
                 # Tableau récapitulatif
                 cols_brutes = [c_marque, c_desig, c_cat, c_prix, c_stock_init, c_stock_actuel, c_seuil_alerte, c_statut]
                 cols_affichage = list(dict.fromkeys([c for c in cols_brutes if c in df.columns]))
                 st.dataframe(resultat[cols_affichage], use_container_width=True)
-                
+
                 st.divider()
                 st.subheader("🛒 Ajouter un produit à la vente")
-                
+
                 article_choisi = st.selectbox(
-                    "Choisissez l'article exact :", 
+                    "Choisissez l'article exact :",
                     options=resultat[c_desig].unique()
                 )
 
-                # Code metric 
-
+                # Code metric
                 row_article = resultat[resultat[c_desig] == article_choisi].iloc[0]
-                
+
                 prix_conseille = row_article[c_prix] if pd.notna(row_article[c_prix]) else 0
                 prix_plancher = row_article[c_seuil_vente] if pd.notna(row_article[c_seuil_vente]) else 0
                 stock_actuel_val = int(row_article[c_stock_actuel]) if pd.notna(row_article[c_stock_actuel]) else 0
 
-               # Conversion sécurisée des prix
+                # Conversion sécurisée des prix
                 try:
                     p_cons_num = float(str(prix_conseille).replace(' ', '').replace(',', '.'))
                     txt_prix_conseille = f"{p_cons_num:,.0f}".replace(',', ' ')
@@ -539,8 +463,8 @@ with tab1:
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
-# 🛒 SAISIE DE LA QUANTITÉ ET DU PRIX
-             # 🛒 SAISIE DE LA QUANTITÉ ET DU PRIX
+
+                # 🛒 SAISIE DE LA QUANTITÉ ET DU PRIX
                 # 0. Récupération sécurisée du DataFrame
                 df_source = None
                 for var_name in ['df_stock', 'df', 'data', 'df_articles', 'df_produits']:
@@ -556,8 +480,11 @@ with tab1:
 
                 if df_source is not None:
                     # 1. Identification de la colonne de désignation
-                    col_desig = "Désignation" if "Désignation" in df_source.columns else [c for c in df_source.columns if any(k in str(c).lower() for k in ['designation', 'désignation', 'article', 'produit'])][0]
-                    
+                    col_desig = "Désignation" if "Désignation" in df_source.columns else [
+                        c for c in df_source.columns
+                        if any(k in str(c).lower() for k in ['designation', 'désignation', 'article', 'produit'])
+                    ][0]
+
                     # 2. Filtrage de l'article sélectionné
                     ligne_art = df_source[df_source[col_desig].astype(str).str.strip() == str(article_choisi).strip()]
 
@@ -565,8 +492,14 @@ with tab1:
                         row_article = ligne_art.iloc[0]
 
                         # Identification sécurisée des colonnes
-                        col_stock_name = "Stock Actuel" if "Stock Actuel" in df_source.columns else [c for c in df_source.columns if any(k in str(c).lower() for k in ['stock', 'dispo', 'qte'])][0]
-                        col_prix_name = "Prix Vente (FCFA)" if "Prix Vente (FCFA)" in df_source.columns else [c for c in df_source.columns if any(k in str(c).lower() for k in ['conseil', 'prix', 'vente'])][0]
+                        col_stock_name = "Stock Actuel" if "Stock Actuel" in df_source.columns else [
+                            c for c in df_source.columns
+                            if any(k in str(c).lower() for k in ['stock', 'dispo', 'qte'])
+                        ][0]
+                        col_prix_name = "Prix Vente (FCFA)" if "Prix Vente (FCFA)" in df_source.columns else [
+                            c for c in df_source.columns
+                            if any(k in str(c).lower() for k in ['conseil', 'prix', 'vente'])
+                        ][0]
                         col_plan_name = "Seuil mini de vente" if "Seuil mini de vente" in df_source.columns else None
 
                         # Extraction et conversion du stock
@@ -588,13 +521,13 @@ with tab1:
 
                         # 3. Champs de saisie Quantité, Prix et Bouton
                         col_qte, col_prix, col_btn = st.columns([1, 1, 1])
-                        
+
                         with col_qte:
                             qte = st.number_input("Quantité :", min_value=1, value=1, step=1, key=f"qte_{article_choisi}")
-                        
+
                         with col_prix:
                             prix_applique = st.number_input(
-                                "Prix Unitaire Appliqué (FCFA) :", 
+                                "Prix Unitaire Appliqué (FCFA) :",
                                 value=prix_conseille_num,
                                 step=500.0,
                                 key=f"prix_{article_choisi}"
@@ -622,108 +555,109 @@ with tab1:
                                     st.success("Article ajouté au panier !")
                                     st.rerun()
 
-# --- GESTION DU PANIER & VALIDATION DE LA VENTE ---
-# La section et le bouton de validation ne s'affichent QUE si le panier contient des articles
-if st.session_state.panier:
-    st.markdown("---")
-    st.subheader("🛒 Panier Actuel")
-    
-    # Affichage du panier sous forme de tableau
-    df_panier = pd.DataFrame(st.session_state.panier)
-    st.dataframe(df_panier, use_container_width=True)
-    
-    total_panier = sum(item.get("Total", 0) for item in st.session_state.panier)
-    st.markdown(f"### **Total Général : {total_panier:,.0f} FCFA**")
+    # --- GESTION DU PANIER & VALIDATION DE LA VENTE ---
+    # La section et le bouton de validation ne s'affichent QUE si le panier contient des articles
+    if st.session_state.panier:
+        st.markdown("---")
+        st.subheader("🛒 Panier Actuel")
 
-    # Champ pour le nom du client
-    nom_client = st.text_input("Nom du Client (optionnel) :", value="Client Comptoir")
+        # Affichage du panier sous forme de tableau
+        df_panier = pd.DataFrame(st.session_state.panier)
+        st.dataframe(df_panier, use_container_width=True)
 
-    col_val, col_vider = st.columns([2, 1])
+        total_panier = sum(item.get("Total", 0) for item in st.session_state.panier)
+        st.markdown(f"### **Total Général : {total_panier:,.0f} FCFA**")
 
-    with col_val:
-        # Bouton à taille normale (use_container_width=False)
-        if st.button("✅ Valider la Vente", type="primary"):
-            with st.spinner("Enregistrement de la vente et mise à jour des stocks..."):
-                nom_client_final = nom_client if nom_client.strip() else "Client Comptoir"
-                
-                # 1. Mise à jour du Catalogue
-                succes = enregistrer_vente_excel(st.session_state.panier, nom_client_final)
+        # Champ pour le nom du client
+        nom_client = st.text_input("Nom du Client (optionnel) :", value="Client Comptoir")
 
-                # 2. Enregistrement dans l'onglet Mouvements
-                if succes:
-                    try:
+        col_val, col_vider = st.columns([2, 1])
+
+        with col_val:
+            # Bouton à taille normale (use_container_width=False)
+            if st.button("✅ Valider la Vente", type="primary"):
+                with st.spinner("Enregistrement de la vente et mise à jour des stocks..."):
+                    nom_client_final = nom_client if nom_client.strip() else "Client Comptoir"
+
+                    # 1. Mise à jour du Catalogue
+                    succes = enregistrer_vente_excel(st.session_state.panier, nom_client_final)
+
+                    # 2. Enregistrement dans l'onglet Mouvements
+                    if succes:
                         try:
-                            df_mouvements = conn.read(worksheet="Mouvements", skiprows=2, ttl=0)
-                        except Exception:
-                            df_mouvements = pd.DataFrame()
+                            try:
+                                df_mouvements = conn.read(worksheet="Mouvements", skiprows=2, ttl=0)
+                            except Exception:
+                                df_mouvements = pd.DataFrame()
 
-                        date_jour = datetime.now().strftime("%Y-%m-%d")
-                        nouvelles_lignes = []
-                        
-                        for item in st.session_state.panier:
-                            desig = str(item.get("Désignation", ""))
-                            qte = int(item.get("Quantité", item.get("quantite", 1)))
-                            pu = float(item.get("Prix Unitaire", item.get("prix_unitaire", 0)))
-                            tot = float(item.get("Total", item.get("total", qte * pu)))
-                            code_art = str(item.get("Code Article", item.get("Code", f"ART-{desig[:3].upper()}")))
-                            cat_art = str(item.get("Catégorie", item.get("categorie", "")))
+                            date_jour = datetime.now().strftime("%Y-%m-%d")
+                            nouvelles_lignes = []
 
-                            nouvelles_lignes.append({
-                                "Date": str(date_jour),
-                                "Type Mouvement": "Sortie",
-                                "Code Article": code_art,
-                                "Désignation": desig,
-                                "Catégorie": cat_art,
-                                "Quantité": qte,
-                                "Prix Unitaire (FCFA)": pu,
-                                "Total FCFA": tot,
-                                "Client / Fournisseur": str(nom_client_final)
-                            })
-                        
-                        df_nouv = pd.DataFrame(nouvelles_lignes)
-                        df_final_mouv = pd.concat([df_mouvements, df_nouv], ignore_index=True)
-                        df_final_mouv = df_final_mouv.dropna(how="all", axis=1).fillna("")
-                        
-                        conn.update(worksheet="Mouvements", data=df_final_mouv)
-                    except Exception as e_mouv:
-                        st.warning(f"Stock Catalogue mis à jour, mais enregistrement Mouvements ignoré : {e_mouv}")
+                            for item in st.session_state.panier:
+                                desig = str(item.get("Désignation", ""))
+                                qte = int(item.get("Quantité", item.get("quantite", 1)))
+                                pu = float(item.get("Prix Unitaire", item.get("prix_unitaire", 0)))
+                                tot = float(item.get("Total", item.get("total", qte * pu)))
+                                code_art = str(item.get("Code Article", item.get("Code", f"ART-{desig[:3].upper()}")))
+                                cat_art = str(item.get("Catégorie", item.get("categorie", "")))
 
-                    # 3. Sauvegarde temporaire pour le Reçu
-                    st.session_state["derniere_vente"] = {
-                        "client": nom_client_final,
-                        "articles": list(st.session_state.panier),
-                        "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    }
+                                nouvelles_lignes.append({
+                                    "Date": str(date_jour),
+                                    "Type Mouvement": "Sortie",
+                                    "Code Article": code_art,
+                                    "Désignation": desig,
+                                    "Catégorie": cat_art,
+                                    "Quantité": qte,
+                                    "Prix Unitaire (FCFA)": pu,
+                                    "Total FCFA": tot,
+                                    "Client / Fournisseur": str(nom_client_final)
+                                })
 
-                    # 4. Vidage du panier et rechargement
-                    st.session_state.panier = []
-                    st.success("🎉 Vente enregistrée avec succès !")
-                    st.rerun()
+                            df_nouv = pd.DataFrame(nouvelles_lignes)
+                            df_final_mouv = pd.concat([df_mouvements, df_nouv], ignore_index=True)
+                            df_final_mouv = df_final_mouv.dropna(how="all", axis=1).fillna("")
 
-    with col_vider:
-        if st.button("🗑️ Vider le panier"):
-            st.session_state.panier = []
+                            conn.update(worksheet="Mouvements", data=df_final_mouv)
+                        except Exception as e_mouv:
+                            st.warning(f"Stock Catalogue mis à jour, mais enregistrement Mouvements ignoré : {e_mouv}")
+
+                        # 3. Sauvegarde temporaire pour le Reçu
+                        st.session_state["derniere_vente"] = {
+                            "client": nom_client_final,
+                            "articles": list(st.session_state.panier),
+                            "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        }
+
+                        # 4. Vidage du panier et rechargement
+                        st.session_state.panier = []
+                        st.success("🎉 Vente enregistrée avec succès !")
+                        st.rerun()
+
+        with col_vider:
+            if st.button("🗑️ Vider le panier"):
+                st.session_state.panier = []
+                st.rerun()
+
+    # --- AFFICHAGE DU REÇU DE CAISSE (après validation) ---
+    if "derniere_vente" in st.session_state and st.session_state["derniere_vente"]:
+        vente = st.session_state["derniere_vente"]
+
+        st.markdown("---")
+        st.subheader("🧾 Reçu de Caisse / Confirmation")
+        st.write(f"**Date :** {vente['date']}")
+        st.write(f"**Client :** {vente['client']}")
+
+        df_recu = pd.DataFrame(vente["articles"])
+        st.dataframe(df_recu[["Désignation", "Quantité", "Prix Unitaire", "Total"]], use_container_width=True)
+
+        total_recu = sum(item.get("Total", 0) for item in vente["articles"])
+        st.markdown(f"### **Total Payé : {total_recu:,.0f} FCFA**")
+
+        if st.button("🧹 Fermer le reçu"):
+            st.session_state["derniere_vente"] = None
             st.rerun()
 
 
-# --- AFFICHAGE DU REÇU DE CAISSE (Abonnement après validation) ---
-if "derniere_vente" in st.session_state and st.session_state["derniere_vente"]:
-    vente = st.session_state["derniere_vente"]
-    
-    st.markdown("---")
-    st.subheader("🧾 Reçu de Caisse / Confirmation")
-    st.write(f"**Date :** {vente['date']}")
-    st.write(f"**Client :** {vente['client']}")
-
-    df_recu = pd.DataFrame(vente["articles"])
-    st.dataframe(df_recu[["Désignation", "Quantité", "Prix Unitaire", "Total"]], use_container_width=True)
-
-    total_recu = sum(item.get("Total", 0) for item in vente["articles"])
-    st.markdown(f"### **Total Payé : {total_recu:,.0f} FCFA**")
-
-    if st.button("🧹 Fermer le reçu"):
-        st.session_state["derniere_vente"] = None
-        st.rerun()
 # --- ONGLET 2 : ARRIVAGES / ENTRÉES ---
 with tab2:
     st.header("📦 Enregistrement d'un Arrivage (Réapprovisionnement)")
@@ -760,6 +694,7 @@ with tab2:
     else:
         st.error("Le catalogue d'articles est actuellement vide ou inaccessible.")
 
+
 # --- ONGLET 3 : STOCK & ALERTES ---
 with tab3:
     st.subheader("🚨 Produits en Alerte de Stock (RÉAPPROVISIONNER)")
@@ -781,12 +716,12 @@ with tab3:
 
         # Filtrage souple sur le statut d'alerte
         mask_alerte = df[c_statut].astype(str).str.contains("RÉAPPROVISIONNER|REAPPROVISIONNER|ALERTE", case=False, na=False)
-        
+
         # Sélection des colonnes disponibles sans doublons
         cols_souhaitees = [c_marque, c_desig, c_cat, c_stock, c_seuil]
         cols_existantes = [c for c in cols_souhaitees if c in df.columns]
         cols_uniques = list(dict.fromkeys(cols_existantes))
-        
+
         df_alertes = df[mask_alerte][cols_uniques]
 
         if not df_alertes.empty:
@@ -796,6 +731,3 @@ with tab3:
             st.success("Tous les niveaux de stock sont corrects !")
     else:
         st.info("Aucune donnée disponible.")
-
-
-
