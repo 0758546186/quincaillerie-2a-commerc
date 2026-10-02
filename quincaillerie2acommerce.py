@@ -491,7 +491,7 @@ with tab1:
              # 🛒 SAISIE DE LA QUANTITÉ ET DU PRIX
                 col_qte, col_prix, col_btn = st.columns([1, 1, 1])
                 
-                qte:
+
                     qte = st.number_input("Quantité :", min_value=1, value=1, step=1)
                 
                 prix:
