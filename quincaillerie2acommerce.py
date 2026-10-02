@@ -488,19 +488,34 @@ with tab1:
                 </div>
                 """, unsafe_allow_html=True)
 # 🛒 SAISIE DE LA QUANTITÉ ET DU PRIX
+                # 1. Extraction et nettoyage sécurisé des prix
+                if pd.notna(prix_conseille):
+                    val_clean_cons = "".join(c for c in str(prix_conseille) if c.isdigit() or c in ['.', ',']).replace(',', '.')
+                    prix_valeur_num = float(val_clean_cons) if val_clean_cons else 0.0
+                else:
+                    prix_valeur_num = 0.0
+
+                if 'prix_plancher' in locals() and pd.notna(prix_plancher):
+                    val_clean_planch = "".join(c for c in str(prix_plancher) if c.isdigit() or c in ['.', ',']).replace(',', '.')
+                    prix_plancher_num = float(val_clean_planch) if val_clean_planch else 0.0
+                else:
+                    prix_plancher_num = 0.0
+
+                if 'stock_actuel' in locals() and pd.notna(stock_actuel):
+                    try:
+                        stock_actuel_val = int(stock_actuel)
+                    except ValueError:
+                        stock_actuel_val = 0
+                else:
+                    stock_actuel_val = 0
+
+                # 2. Affichage des champs de saisie
                 col_qte, col_prix, col_btn = st.columns([1, 1, 1])
                 
                 with col_qte:
                     qte = st.number_input("Quantité :", min_value=1, value=1, step=1, key="input_qte_vente")
                 
                 with col_prix:
-                    # Nettoyage sécurisé pour extraire uniquement la valeur numérique
-                    if pd.notna(prix_conseille):
-                        val_clean = "".join(c for c in str(prix_conseille) if c.isdigit() or c in ['.', ',']).replace(',', '.')
-                        prix_valeur_num = float(val_clean) if val_clean else 0.0
-                    else:
-                        prix_valeur_num = 0.0
-
                     prix_applique = st.number_input(
                         "Prix Unitaire Appliqué (FCFA) :", 
                         value=prix_valeur_num,
@@ -508,7 +523,7 @@ with tab1:
                     )
 
                 with col_btn:
-                    st.write("") # Espacement pour aligner verticalement
+                    st.write("") # Espacement vertical
                     st.write("")
                     if st.button("➕ Ajouter au Panier", use_container_width=True, key="btn_ajouter_panier"):
                         if prix_plancher_num > 0 and prix_applique < prix_plancher_num:
