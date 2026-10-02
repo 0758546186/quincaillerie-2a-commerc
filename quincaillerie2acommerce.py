@@ -488,44 +488,39 @@ with tab1:
                 </div>
                 """, unsafe_allow_html=True)
 # 🛒 SAISIE DE LA QUANTITÉ ET DU PRIX
-                # 1. Extraction et nettoyage sécurisé des prix
-                if pd.notna(prix_conseille):
-                    val_clean_cons = "".join(c for c in str(prix_conseille) if c.isdigit() or c in ['.', ',']).replace(',', '.')
-                    prix_valeur_num = float(val_clean_cons) if val_clean_cons else 0.0
-                else:
-                    prix_valeur_num = 0.0
+                # 1. Extraction et nettoyage strict du stock et des prix de l'article sélectionné
+                row_article = df_stock[df_stock[c_desig] == article_choisi].iloc[0]
 
-                if 'prix_plancher' in locals() and pd.notna(prix_plancher):
-                    val_clean_planch = "".join(c for c in str(prix_plancher) if c.isdigit() or c in ['.', ',']).replace(',', '.')
-                    prix_plancher_num = float(val_clean_planch) if val_clean_planch else 0.0
-                else:
-                    prix_plancher_num = 0.0
+                raw_stock = row_article[c_stock] if c_stock and pd.notna(row_article[c_stock]) else 0
+                stock_clean_str = "".join(c for c in str(raw_stock) if c.isdigit())
+                stock_actuel_val = int(stock_clean_str) if stock_clean_str else 0
 
-                if 'stock_actuel' in locals() and pd.notna(stock_actuel):
-                    try:
-                        stock_actuel_val = int(stock_actuel)
-                    except ValueError:
-                        stock_actuel_val = 0
-                else:
-                    stock_actuel_val = 0
+                raw_prix_cons = row_article[c_prix] if c_prix and pd.notna(row_article[c_prix]) else 0
+                prix_cons_clean = "".join(c for c in str(raw_prix_cons) if c.isdigit())
+                prix_conseille_num = float(prix_cons_clean) if prix_cons_clean else 0.0
 
-                # 2. Affichage des champs de saisie
+                raw_prix_plan = row_article[c_prix_plan] if c_prix_plan and pd.notna(row_article[c_prix_plan]) else 0
+                prix_plan_clean = "".join(c for c in str(raw_prix_plan) if c.isdigit())
+                prix_plancher_num = float(prix_plan_clean) if prix_plan_clean else 0.0
+
+                # 2. Saisie Quantité, Prix et Bouton
                 col_qte, col_prix, col_btn = st.columns([1, 1, 1])
                 
                 with col_qte:
-                    qte = st.number_input("Quantité :", min_value=1, value=1, step=1, key="input_qte_vente")
+                    qte = st.number_input("Quantité :", min_value=1, value=1, step=1, key=f"qte_{article_choisi}")
                 
                 with col_prix:
                     prix_applique = st.number_input(
                         "Prix Unitaire Appliqué (FCFA) :", 
-                        value=prix_valeur_num,
-                        key="input_prix_vente"
+                        value=prix_conseille_num,
+                        step=500.0,
+                        key=f"prix_{article_choisi}"
                     )
 
                 with col_btn:
-                    st.write("") # Espacement vertical
                     st.write("")
-                    if st.button("➕ Ajouter au Panier", use_container_width=True, key="btn_ajouter_panier"):
+                    st.write("")
+                    if st.button("➕ Ajouter au Panier", use_container_width=True, key=f"btn_{article_choisi}"):
                         if prix_plancher_num > 0 and prix_applique < prix_plancher_num:
                             st.error(f"❌ Prix inférieur au plancher ({prix_plancher_num:,.0f} FCFA).")
                         elif qte > stock_actuel_val:
@@ -533,8 +528,8 @@ with tab1:
                         else:
                             st.session_state.panier.append({
                                 "Désignation": article_choisi,
-                                "Catégorie": row_article[c_cat] if pd.notna(row_article[c_cat]) else "",
-                                "Quantité": qte,
+                                "Catégorie": str(row_article[c_cat]) if pd.notna(row_article[c_cat]) else "",
+                                "Quantité": int(qte),
                                 "Prix Unitaire": int(prix_applique),
                                 "Total": int(qte * prix_applique)
                             })
