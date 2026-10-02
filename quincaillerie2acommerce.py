@@ -186,6 +186,11 @@ if not df.empty and "Stock Actuel" in df.columns:
 
 
 # --- FONCTION DE GÉNÉRATION DU REÇU PDF ---
+def encode_latin1(texte):
+    """Convertit les caractères accentués/spéciaux pour éviter UnicodeEncodeError dans FPDF"""
+    if not isinstance(texte, str):
+        texte = str(texte)
+    return texte.encode('latin-1', 'replace').decode('latin-1')
 def generer_recu_pdf(nom_client, panier, total_general):
     pdf = FPDF()
     pdf.add_page()
