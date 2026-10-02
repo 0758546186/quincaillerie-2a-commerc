@@ -188,7 +188,6 @@ def encode_latin1(texte):
         return ""
     if not isinstance(texte, str):
         texte = str(texte)
-    # Remplacer les apostrophes typographiques et espaces insécables fréquents
     texte = texte.replace("’", "'").replace("–", "-")
     return texte.encode('latin-1', 'replace').decode('latin-1')
 
@@ -250,27 +249,14 @@ def generer_recu_pdf(nom_client, panier, total_general):
     pdf.set_font("Helvetica", "I", 9)
     pdf.cell(0, 5, encode_latin1("Merci pour votre confiance et à bientôt !"), ln=True, align="C")
 
+    # Sauvegarde sur disque et retour des octets pour Streamlit
     os.makedirs("factures", exist_ok=True)
     nom_fichier_pdf = f"factures/Recu_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
     pdf.output(nom_fichier_pdf)
-    return nom_fichier_pdf
 
-
-# --- OUTILS DE LECTURE DU SHEET ---
-def _trouver_entete(donnees, mots):
-    """Retourne l'index de la première ligne contenant tous les mots donnés."""
-    for i, row in enumerate(donnees):
-        txt = " ".join(str(v).lower() for v in row)
-        if all(m in txt for m in mots):
-            return i
-    return None
-
-
-def _vers_nombre(val):
-    """Convertit '1 200', '12,0' ou '' en entier."""
-    partie = str(val).replace(",", ".").split(".")[0]
-    chiffres = "".join(c for c in partie if c.isdigit())
-    return int(chiffres) if chiffres else 0
+    # Retourne le contenu binaire du fichier
+    with open(nom_fichier_pdf, "rb") as f:
+        return f.read()
 
 
 # --- FONCTION DE MISE À JOUR DU STOCK (VENTE) ---
@@ -673,24 +659,46 @@ with tab1:
                 st.session_state.panier = []
                 st.rerun()
 
-    # --- AFFICHAGE DU REÇU DE CAISSE (après validation) ---
+  # --- AFFICHAGE DU REÇU APRÈS VALIDATION ---
     if "derniere_vente" in st.session_state and st.session_state["derniere_vente"]:
         vente = st.session_state["derniere_vente"]
-
+        
         st.markdown("---")
-        st.subheader("🧾 Reçu de Caisse / Confirmation")
-        st.write(f"**Date :** {vente['date']}")
-        st.write(f"**Client :** {vente['client']}")
+        st.subheader("📄 Reçu de Caisse")
 
+        st.info(f"**Client :** {vente['client']}  \n**Date :** {vente['date']}")
         df_recu = pd.DataFrame(vente["articles"])
-        st.dataframe(df_recu[["Désignation", "Quantité", "Prix Unitaire", "Total"]], use_container_width=True)
+        st.table(df_recu)
+        st.markdown(f"#### **Total Réglé : {vente.get('total', 0):,.0f} FCFA**")
 
-        total_recu = sum(item.get("Total", 0) for item in vente["articles"])
-        st.markdown(f"### **Total Payé : {total_recu:,.0f} FCFA**")
+        # Génération du fichier PDF binaire avec le BON ordre d'arguments
+        try:
+            pdf_bytes = generer_recu_pdf(
+                nom_client=vente["client"],
+                panier=vente["articles"],
+                total_general=vente.get("total", 0)
+            )
+        except Exception as e:
+            st.error(f"Erreur lors de la création du PDF : {e}")
+            pdf_bytes = None
 
-        if st.button("🧹 Fermer le reçu"):
-            st.session_state["derniere_vente"] = None
-            st.rerun()
+        col_dl, col_fermer = st.columns([2, 1])
+
+        with col_dl:
+            if pdf_bytes:
+                st.download_button(
+                    label="📥 Télécharger le Reçu (PDF)",
+                    data=pdf_bytes,
+                    file_name=f"Recu_{vente['client'].replace(' ', '_')}.pdf",
+                    mime="application/pdf",
+                    type="primary",
+                    use_container_width=True
+                )
+
+        with col_fermer:
+            if st.button("❌ Fermer le Reçu", use_container_width=True):
+                del st.session_state["derniere_vente"]
+                st.rerun()
 
 
 # --- ONGLET 2 : ARRIVAGES / ENTRÉES ---
