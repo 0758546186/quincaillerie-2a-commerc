@@ -28,8 +28,8 @@ else:
     st.error("Section [gcp_service_account] introuvable dans les Secrets Streamlit.")
     st.stop()
 
-# Connexion unique à Google Sheets
-conn = st.connection("gsheets", type=GSheetsConnection)
+#  NOUVELLE LIGNE (qui charge vos secrets de compte de service)
+conn = st.connection("gsheets", type="gsheets")
 
 # --- FONCTION DE CHARGEMENT DES DONNÉES DEPUIS GOOGLE SHEETS ---
 @st.cache_data(ttl=60)
