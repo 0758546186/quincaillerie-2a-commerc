@@ -488,22 +488,33 @@ with tab1:
                 </div>
                 """, unsafe_allow_html=True)
 # 🛒 SAISIE DE LA QUANTITÉ ET DU PRIX
-                # 1. Extraction et nettoyage strict du stock et des prix de l'article sélectionné
+                # 1. Identification de la colonne désignation/article
+                if 'c_desig' not in locals():
+                    c_desig = [c for c in df_stock.columns if 'Désignation' in c or 'Article' in c or 'Designation' in c][0]
+
+                # 2. Extraction et nettoyage strict du stock et des prix de l'article sélectionné
                 row_article = df_stock[df_stock[c_desig] == article_choisi].iloc[0]
 
-                raw_stock = row_article[c_stock] if c_stock and pd.notna(row_article[c_stock]) else 0
+                # Colonnes de stock et prix (avec valeurs par défaut sécurisées)
+                col_stock_name = c_stock if 'c_stock' in locals() and c_stock in df_stock.columns else [c for c in df_stock.columns if 'Stock' in c][0]
+                col_prix_name = c_prix if 'c_prix' in locals() and c_prix in df_stock.columns else [c for c in df_stock.columns if 'Prix' in c or 'Vente' in c][0]
+
+                raw_stock = row_article[col_stock_name] if pd.notna(row_article[col_stock_name]) else 0
                 stock_clean_str = "".join(c for c in str(raw_stock) if c.isdigit())
                 stock_actuel_val = int(stock_clean_str) if stock_clean_str else 0
 
-                raw_prix_cons = row_article[c_prix] if c_prix and pd.notna(row_article[c_prix]) else 0
+                raw_prix_cons = row_article[col_prix_name] if pd.notna(row_article[col_prix_name]) else 0
                 prix_cons_clean = "".join(c for c in str(raw_prix_cons) if c.isdigit())
                 prix_conseille_num = float(prix_cons_clean) if prix_cons_clean else 0.0
 
-                raw_prix_plan = row_article[c_prix_plan] if c_prix_plan and pd.notna(row_article[c_prix_plan]) else 0
-                prix_plan_clean = "".join(c for c in str(raw_prix_plan) if c.isdigit())
-                prix_plancher_num = float(prix_plan_clean) if prix_plan_clean else 0.0
+                if 'c_prix_plan' in locals() and c_prix_plan in df_stock.columns:
+                    raw_prix_plan = row_article[c_prix_plan] if pd.notna(row_article[c_prix_plan]) else 0
+                    prix_plan_clean = "".join(c for c in str(raw_prix_plan) if c.isdigit())
+                    prix_plancher_num = float(prix_plan_clean) if prix_plan_clean else 0.0
+                else:
+                    prix_plancher_num = 0.0
 
-                # 2. Saisie Quantité, Prix et Bouton
+                # 3. Saisie Quantité, Prix et Bouton
                 col_qte, col_prix, col_btn = st.columns([1, 1, 1])
                 
                 with col_qte:
@@ -528,7 +539,7 @@ with tab1:
                         else:
                             st.session_state.panier.append({
                                 "Désignation": article_choisi,
-                                "Catégorie": str(row_article[c_cat]) if pd.notna(row_article[c_cat]) else "",
+                                "Catégorie": str(row_article['Catégorie']) if 'Catégorie' in df_stock.columns and pd.notna(row_article['Catégorie']) else "",
                                 "Quantité": int(qte),
                                 "Prix Unitaire": int(prix_applique),
                                 "Total": int(qte * prix_applique)
