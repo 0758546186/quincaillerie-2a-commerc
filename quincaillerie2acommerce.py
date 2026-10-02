@@ -261,33 +261,38 @@ def generer_recu_pdf(nom_client, panier, total_general):
 # --- FONCTION DE MISE À JOUR DU STOCK (VENTE) ---
 def enregistrer_vente_excel(panier, nom_client):
     try:
-        # 1. Lecture du Catalogue (ligne 3 des entêtes)
+        # 1. Lecture du Catalogue (skiprows=2 pour démarrer à la ligne 3)
         df_cat = conn.read(worksheet="Catalogue", skiprows=2, ttl=0)
         df_cat = df_cat.dropna(subset=["Désignation"])
 
-        # 2. Mise à jour des sorties et stocks dans le dataframe
+        # 2. Nettoyage pour correspondance exacte
+        df_cat["Désignation_clean"] = df_cat["Désignation"].astype(str).str.strip()
+
+        # 3. Mise à jour des sorties et des stocks
         for item in panier:
             desig = str(item["Désignation"]).strip()
             qte = int(item["Quantité"])
-            
-            idx = df_cat[df_cat["Désignation"].astype(str).str.strip() == desig].index
+
+            idx = df_cat[df_cat["Désignation_clean"] == desig].index
             if not idx.empty:
                 i = idx[0]
-                # Traitement Sorties
+                # Calcul Sorties
                 sorties_act = df_cat.at[i, "Sorties"] if "Sorties" in df_cat.columns and pd.notna(df_cat.at[i, "Sorties"]) else 0
                 digits_sorties = "".join(c for c in str(sorties_act) if c.isdigit())
                 val_sorties = int(digits_sorties) if digits_sorties else 0
                 df_cat.at[i, "Sorties"] = val_sorties + qte
 
-                # Traitement Stock Actuel si la colonne existe
+                # Calcul Stock Actuel
                 if "Stock Actuel" in df_cat.columns:
                     stock_act = df_cat.at[i, "Stock Actuel"] if pd.notna(df_cat.at[i, "Stock Actuel"]) else 0
                     digits_stock = "".join(c for c in str(stock_act) if c.isdigit())
                     val_stock = int(digits_stock) if digits_stock else 0
                     df_cat.at[i, "Stock Actuel"] = val_stock - qte
 
-        # 3. Écriture sans l'argument 'range' pour éviter l'erreur API
-        df_cat = df_cat.fillna("")
+        # 4. Suppression de la colonne temporaire
+        df_cat = df_cat.drop(columns=["Désignation_clean"]).fillna("")
+
+        # 5. Écriture sans l'argument 'range' (évite le crash API)
         conn.update(worksheet="Catalogue", data=df_cat)
 
         st.cache_data.clear()
