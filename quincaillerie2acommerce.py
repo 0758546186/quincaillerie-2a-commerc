@@ -488,59 +488,85 @@ with tab1:
                 </div>
                 """, unsafe_allow_html=True)
 # 🛒 SAISIE DE LA QUANTITÉ ET DU PRIX
-                # 1. Récupération de la ligne sélectionnée
-                row_article = df_stock[df_stock[c_desig] == article_choisi].iloc[0]
+                # 0. Récupération sécurisée du DataFrame stock
+                df_source = None
+                for candidate in ['df_stock', 'df', 'data', 'df_articles', 'df_produits']:
+                    if candidate in locals() and isinstance(locals()[candidate], pd.DataFrame):
+                        df_source = locals()[candidate]
+                        break
+                    elif candidate in globals() and isinstance(globals()[candidate], pd.DataFrame):
+                        df_source = globals()[candidate]
+                        break
 
-                # 2. Nettoyage strict du stock à partir de la VRAIE colonne c_stock
-                val_stock_brut = row_article[c_stock] if pd.notna(row_article[c_stock]) else 0
-                digits_stock = "".join(c for c in str(val_stock_brut) if c.isdigit())
-                stock_actuel_val = int(digits_stock) if digits_stock else 0
+                if df_source is None and 'df_stock' in st.session_state:
+                    df_source = st.session_state.df_stock
 
-                # 3. Nettoyage strict des prix conseillé et plancher
-                val_prix_cons = row_article[c_prix] if pd.notna(row_article[c_prix]) else 0
-                digits_prix = "".join(c for c in str(val_prix_cons) if c.isdigit())
-                prix_conseille_num = float(digits_prix) if digits_prix else 0.0
+                if df_source is not None:
+                    # 1. Identification de la colonne désignation
+                    col_desig = c_desig if 'c_desig' in locals() and c_desig in df_source.columns else [c for c in df_source.columns if any(k in str(c).lower() for k in ['designation', 'désignation', 'article', 'produit'])][0]
+                    
+                    # 2. Filtrage de l'article choisi
+                    ligne_filtree = df_source[df_source[col_desig].astype(str) == str(article_choisi)]
 
-                if 'c_prix_plan' in locals() and pd.notna(row_article[c_prix_plan]):
-                    digits_plan = "".join(c for c in str(row_article[c_prix_plan]) if c.isdigit())
-                    prix_plancher_num = float(digits_plan) if digits_plan else 0.0
-                else:
-                    prix_plancher_num = 0.0
+                    if not ligne_filtree.empty:
+                        row_article = ligne_filtree.iloc[0]
 
-                # 4. Champs de saisie
-                col_qte, col_prix, col_btn = st.columns([1, 1, 1])
-                
-                with col_qte:
-                    qte = st.number_input("Quantité :", min_value=1, value=1, step=1, key=f"qte_{article_choisi}")
-                
-                with col_prix:
-                    prix_applique = st.number_input(
-                        "Prix Unitaire Appliqué (FCFA) :", 
-                        value=prix_conseille_num,
-                        step=500.0,
-                        key=f"prix_{article_choisi}"
-                    )
+                        # Identification des colonnes
+                        col_stock_name = c_stock if 'c_stock' in locals() and c_stock in df_source.columns else [c for c in df_source.columns if any(k in str(c).lower() for k in ['stock', 'dispo', 'qte'])][0]
+                        col_prix_name = c_prix if 'c_prix' in locals() and c_prix in df_source.columns else [c for c in df_source.columns if any(k in str(c).lower() for k in ['conseil', 'prix', 'vente'])][0]
 
-                with col_btn:
-                    st.write("")
-                    st.write("")
-                    if st.button("➕ Ajouter au Panier", use_container_width=True, key=f"btn_{article_choisi}"):
-                        if prix_plancher_num > 0 and prix_applique < prix_plancher_num:
-                            st.error(f"❌ Prix inférieur au plancher ({prix_plancher_num:,.0f} FCFA).")
-                        elif qte > stock_actuel_val:
-                            st.warning(f"⚠️ Stock insuffisant ! Disponible : {stock_actuel_val}")
+                        # Nettoyage strict du stock (extrait par exemple 4 depuis "4 pcs")
+                        raw_stock = row_article[col_stock_name] if pd.notna(row_article[col_stock_name]) else 0
+                        digits_stock = "".join(c for c in str(raw_stock) if c.isdigit())
+                        stock_actuel_val = int(digits_stock) if digits_stock else 0
+
+                        # Nettoyage du prix conseillé
+                        raw_prix_cons = row_article[col_prix_name] if pd.notna(row_article[col_prix_name]) else 0
+                        digits_prix = "".join(c for c in str(raw_prix_cons) if c.isdigit())
+                        prix_conseille_num = float(digits_prix) if digits_prix else 0.0
+
+                        # Nettoyage du prix plancher
+                        if 'c_prix_plan' in locals() and c_prix_plan in df_source.columns and pd.notna(row_article[c_prix_plan]):
+                            digits_plan = "".join(c for c in str(row_article[c_prix_plan]) if c.isdigit())
+                            prix_plancher_num = float(digits_plan) if digits_plan else 0.0
                         else:
-                            cat_val = str(row_article[c_cat]) if 'c_cat' in locals() and pd.notna(row_article[c_cat]) else ""
+                            prix_plancher_num = 0.0
 
-                            st.session_state.panier.append({
-                                "Désignation": article_choisi,
-                                "Catégorie": cat_val,
-                                "Quantité": int(qte),
-                                "Prix Unitaire": int(prix_applique),
-                                "Total": int(qte * prix_applique)
-                            })
-                            st.success("Article ajouté au panier !")
-                            st.rerun()
+                        # 3. Formulaire de Saisie
+                        col_qte, col_prix, col_btn = st.columns([1, 1, 1])
+                        
+                        with col_qte:
+                            qte = st.number_input("Quantité :", min_value=1, value=1, step=1, key=f"qte_{article_choisi}")
+                        
+                        with col_prix:
+                            prix_applique = st.number_input(
+                                "Prix Unitaire Appliqué (FCFA) :", 
+                                value=prix_conseille_num,
+                                step=500.0,
+                                key=f"prix_{article_choisi}"
+                            )
+
+                        with col_btn:
+                            st.write("")
+                            st.write("")
+                            if st.button("➕ Ajouter au Panier", use_container_width=True, key=f"btn_{article_choisi}"):
+                                if prix_plancher_num > 0 and prix_applique < prix_plancher_num:
+                                    st.error(f"❌ Prix inférieur au plancher ({prix_plancher_num:,.0f} FCFA).")
+                                elif qte > stock_actuel_val:
+                                    st.warning(f"⚠️ Stock insuffisant ! Disponible : {stock_actuel_val}")
+                                else:
+                                    col_cat_name = c_cat if 'c_cat' in locals() and c_cat in df_source.columns else None
+                                    cat_val = str(row_article[col_cat_name]) if col_cat_name and pd.notna(row_article[col_cat_name]) else ""
+
+                                    st.session_state.panier.append({
+                                        "Désignation": article_choisi,
+                                        "Catégorie": cat_val,
+                                        "Quantité": int(qte),
+                                        "Prix Unitaire": int(prix_applique),
+                                        "Total": int(qte * prix_applique)
+                                    })
+                                    st.success("Article ajouté au panier !")
+                                    st.rerun()
 
 # --- PARTIE DROITE : GESTION DU PANIER & VALIDATION DE LA VENTE ---
     with col_panier:
