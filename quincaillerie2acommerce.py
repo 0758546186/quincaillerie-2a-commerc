@@ -262,8 +262,12 @@ def generer_recu_pdf(nom_client, panier, total_general):
 # --- FONCTION DE MISE À JOUR DU STOCK (VENTE) ---
 def enregistrer_vente_excel(panier, nom_client):
     try:
+        # Lecture du catalogue avec conversion automatique du texte en chiffres
         df_cat = conn.read(spreadsheet=URL_SHEET, worksheet="Catalogue", skiprows=3, ttl=0)
         df_cat = df_cat.dropna(subset=["Désignation"])
+
+        # Nettoyage des espaces invisibles dans la colonne Désignation
+        df_cat["Désignation_clean"] = df_cat["Désignation"].astype(str).str.strip()
 
         try:
             df_mouv = conn.read(spreadsheet=URL_SHEET, worksheet="Mouvements", skiprows=3, ttl=0)
@@ -274,45 +278,75 @@ def enregistrer_vente_excel(panier, nom_client):
         nouvelles_lignes_mouv = []
 
         for item in panier:
-            desig = item["Désignation"]
-            qte_vendue = item["Quantité"]
-            prix_u = item["Prix Unitaire"]
-            total_vente = item["Total"]
+            desig = str(item["Désignation"]).strip()
+            qte_vendue = int(item["Quantité"])
+            prix_u = float(item["Prix Unitaire"])
+            total_vente = float(item["Total"])
 
-            idx = df_cat[df_cat["Désignation"] == desig].index
+            # Recherche exacte de l'article (insensible aux espaces superflus)
+            idx = df_cat[df_cat["Désignation_clean"] == desig].index
 
             if not idx.empty:
                 i = idx[0]
-                df_cat.at[i, "Sorties"] = df_cat.at[i, "Sorties"] + qte_vendue
-                df_cat.at[i, "Stock Actuel"] = df_cat.at[i, "Stock Actuel"] - qte_vendue
 
-                seuil = df_cat.at[i, "Seuil Alerte"]
-                stock_actuel = df_cat.at[i, "Stock Actuel"]
-                if pd.notna(seuil) and stock_actuel <= seuil:
-                    df_cat.at[i, "Statut Stock"] = "RÉAPPROVISIONNER"
-                else:
-                    df_cat.at[i, "Statut Stock"] = "OK"
+                # --- 1. Nettoyage et incrémentation des Sorties ---
+                raw_sorties = df_cat.at[i, "Sorties"] if "Sorties" in df_cat.columns and pd.notna(df_cat.at[i, "Sorties"]) else 0
+                digits_sorties = "".join(c for c in str(raw_sorties) if c.isdigit())
+                sorties_actuelles = int(digits_sorties) if digits_sorties else 0
+                
+                df_cat.at[i, "Sorties"] = sorties_actuelles + qte_vendue
 
-                code_art = df_cat.at[i, "Code Article"] if "Code Article" in df_cat.columns else f"ART-{desig[:3].upper()}"
+                # --- 2. Mise à jour de Stock Actuel (s'il s'agit d'une valeur fixe et non d'une formule) ---
+                if "Stock Actuel" in df_cat.columns:
+                    raw_stock = df_cat.at[i, "Stock Actuel"] if pd.notna(df_cat.at[i, "Stock Actuel"]) else 0
+                    digits_stock = "".join(c for c in str(raw_stock) if c.isdigit())
+                    stock_actuel_val = int(digits_stock) if digits_stock else 0
+                    
+                    nouveau_stock = stock_actuel_val - qte_vendue
+                    df_cat.at[i, "Stock Actuel"] = nouveau_stock
 
+                    # --- 3. Vérification Seuil Alerte ---
+                    seuil_raw = df_cat.at[i, "Seuil Alerte"] if "Seuil Alerte" in df_cat.columns and pd.notna(df_cat.at[i, "Seuil Alerte"]) else 0
+                    digits_seuil = "".join(c for c in str(seuil_raw) if c.isdigit())
+                    seuil_val = int(digits_seuil) if digits_seuil else 0
+
+                    if "Statut Stock" in df_cat.columns:
+                        if nouveau_stock <= seuil_val:
+                            df_cat.at[i, "Statut Stock"] = "RÉAPPROVISIONNER"
+                        else:
+                            df_cat.at[i, "Statut Stock"] = "OK"
+
+                # Code article
+                code_art = df_cat.at[i, "Code Article"] if "Code Article" in df_cat.columns and pd.notna(df_cat.at[i, "Code Article"]) else f"ART-{desig[:3].upper()}"
+
+            else:
+                code_art = f"ART-{desig[:3].upper()}"
+
+            # Ajout du mouvement
             nouvelles_lignes_mouv.append({
                 "Date": date_jour,
                 "Type Mouvement": "Sortie",
                 "Code Article": code_art,
-                "Catégorie": desig,
+                "Catégorie": item.get("Catégorie", desig),
                 "Quantité": qte_vendue,
                 "Prix Unitaire (FCFA)": prix_u,
                 "Total FCFA": total_vente,
                 "Client / Fournisseur": nom_client,
             })
 
+        # Nettoyage de la colonne temporaire
+        if "Désignation_clean" in df_cat.columns:
+            df_cat = df_cat.drop(columns=["Désignation_clean"])
+
         if nouvelles_lignes_mouv:
             df_nouv_mouv = pd.DataFrame(nouvelles_lignes_mouv)
             df_mouv = pd.concat([df_mouv, df_nouv_mouv], ignore_index=True)
 
+        # Écriture dans Google Sheets
         conn.update(spreadsheet=URL_SHEET, worksheet="Catalogue", data=df_cat, range="A4")
         conn.update(spreadsheet=URL_SHEET, worksheet="Mouvements", data=df_mouv, range="A4")
 
+        # Vidage complet du cache Streamlit
         st.cache_data.clear()
         return True
 
