@@ -514,7 +514,7 @@ with tab1:
                     prix_plancher_num = 0.0
 
                 # AJOUT DE LA COLONNE BOUTON QUI MANQUAIT
-                btn:
+               with btn:
                     st.write("") # Espacement pour aligner verticalement avec les champs
                     st.write("")
                     if st.button("➕ Ajouter au Panier", use_container_width=True):
