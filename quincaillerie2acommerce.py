@@ -382,44 +382,37 @@ def enregistrer_reapprovisionnement_sheets(desig, qte_recue, nom_fournisseur, pr
 
         if maj:
             ws_cat.batch_update(maj, value_input_option="USER_ENTERED")
-
-# 4. Enregistrement dans l'onglet Mouvements (colonnes A à H de manière fixe)
+# 4. Enregistrement dans l'onglet Mouvements
         try:
+            # Si vous utilisez gspread directement
             ws_mouv = classeur.worksheet("Mouvements")
             date_jour = datetime.now().strftime("%d/%m/%Y")
 
             lignes_a_ajouter = []
             for item in panier:
-                desig = str(item.get("Désignation", ""))
-                qte = int(item.get("Quantité", 1))
-                prix_u = float(item.get("Prix Unitaire", item.get("Prix Unitaire Appliqué (FCFA)", 0)))
+                desig = str(item.get("Désignation", item.get("article", "")))
+                qte = int(item.get("Quantité", item.get("quantite", 1)))
+                prix_u = float(item.get("Prix Unitaire", item.get("prix_unitaire", 0)))
                 total_v = float(item.get("Total", qte * prix_u))
 
-                # Alignement strict de la colonne A jusqu'à la colonne H
                 lignes_a_ajouter.append([
-                    date_jour,                              # Col A: Date
-                    "Sortie",                               # Col B: Type Mouvement
-                    f"ART-{desig[:3].upper()}",             # Col C: Code Article
-                    desig,                                  # Col D: Désignation
-                    qte,                                    # Col E: Quantité
-                    f"{int(prix_u)} FCFA",                  # Col F: Prix Unitaire
-                    f"{int(total_v)} FCFA",                 # Col G: Total FCFA
-                    nom_client                              # Col H: Client / Fournisseur
+                    date_jour,                              # Col A
+                    "Sortie",                               # Col B
+                    f"ART-{desig[:3].upper()}",             # Col C
+                    desig,                                  # Col D
+                    qte,                                    # Col E
+                    f"{int(prix_u)} FCFA",                  # Col F
+                    f"{int(total_v)} FCFA",                 # Col G
+                    nom_client                              # Col H
                 ])
 
             if lignes_a_ajouter:
-                # Écriture directe de A à H sans décalage
-                ws_mouv.append_rows(lignes_a_ajouter, value_input_option="USER_ENTERED")
+                res = ws_mouv.append_rows(lignes_a_ajouter, value_input_option="USER_ENTERED")
+                st.info(f"Résultat écriture : {res}") # Message de confirmation
 
         except Exception as e_mouv:
-            st.warning(f"Catalogue mis à jour, mais erreur sur l'onglet Mouvements : {e_mouv}")
-
-        st.cache_data.clear()
-        return True
-
-    except Exception as e:
-        st.error(f"Erreur globale lors de la mise à jour Google Sheets : {e}")
-        return False
+            st.error(f"❌ Erreur sur l'onglet Mouvements : {e_mouv}")
+            return False
 
 # --- APPLICATION PRINCIPALE ---
 if df.empty:
