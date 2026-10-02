@@ -488,64 +488,73 @@ with tab1:
                 </div>
                 """, unsafe_allow_html=True)
 # 🛒 SAISIE DE LA QUANTITÉ ET DU PRIX
-                # 1. Identification de la colonne désignation/article
-                if 'c_desig' not in locals():
-                    c_desig = [c for c in df_stock.columns if 'Désignation' in c or 'Article' in c or 'Designation' in c][0]
+                # 1. Détection dynamique de la colonne de désignation/article
+                col_desig = [c for c in df_stock.columns if any(k in c.lower() for k in ['designation', 'désignation', 'article', 'nom', 'produit'])][0]
 
-                # 2. Extraction et nettoyage strict du stock et des prix de l'article sélectionné
-                row_article = df_stock[df_stock[c_desig] == article_choisi].iloc[0]
+                # 2. Récupération de la ligne correspondant à l'article choisi
+                df_filtr = df_stock[df_stock[col_desig].astype(str) == str(article_choisi)]
 
-                # Colonnes de stock et prix (avec valeurs par défaut sécurisées)
-                col_stock_name = c_stock if 'c_stock' in locals() and c_stock in df_stock.columns else [c for c in df_stock.columns if 'Stock' in c][0]
-                col_prix_name = c_prix if 'c_prix' in locals() and c_prix in df_stock.columns else [c for c in df_stock.columns if 'Prix' in c or 'Vente' in c][0]
+                if not df_filtr.empty:
+                    row_article = df_filtr.iloc[0]
 
-                raw_stock = row_article[col_stock_name] if pd.notna(row_article[col_stock_name]) else 0
-                stock_clean_str = "".join(c for c in str(raw_stock) if c.isdigit())
-                stock_actuel_val = int(stock_clean_str) if stock_clean_str else 0
+                    # Détection dynamique des colonnes de stock et prix
+                    col_stock_name = [c for c in df_stock.columns if 'stock' in c.lower() or 'dispo' in c.lower() or 'qte' in c.lower()][0]
+                    col_prix_name = [c for c in df_stock.columns if 'conseil' in c.lower() or 'prix' in c.lower() or 'vente' in c.lower()][0]
 
-                raw_prix_cons = row_article[col_prix_name] if pd.notna(row_article[col_prix_name]) else 0
-                prix_cons_clean = "".join(c for c in str(raw_prix_cons) if c.isdigit())
-                prix_conseille_num = float(prix_cons_clean) if prix_cons_clean else 0.0
+                    # Extraction du stock (nettoyage numérique strict)
+                    raw_stock = row_article[col_stock_name] if pd.notna(row_article[col_stock_name]) else 0
+                    stock_clean_str = "".join(c for c in str(raw_stock) if c.isdigit())
+                    stock_actuel_val = int(stock_clean_str) if stock_clean_str else 0
 
-                if 'c_prix_plan' in locals() and c_prix_plan in df_stock.columns:
-                    raw_prix_plan = row_article[c_prix_plan] if pd.notna(row_article[c_prix_plan]) else 0
-                    prix_plan_clean = "".join(c for c in str(raw_prix_plan) if c.isdigit())
-                    prix_plancher_num = float(prix_plan_clean) if prix_plan_clean else 0.0
-                else:
-                    prix_plancher_num = 0.0
+                    # Extraction du prix conseillé
+                    raw_prix_cons = row_article[col_prix_name] if pd.notna(row_article[col_prix_name]) else 0
+                    prix_cons_clean = "".join(c for c in str(raw_prix_cons) if c.isdigit())
+                    prix_conseille_num = float(prix_cons_clean) if prix_cons_clean else 0.0
 
-                # 3. Saisie Quantité, Prix et Bouton
-                col_qte, col_prix, col_btn = st.columns([1, 1, 1])
-                
-                with col_qte:
-                    qte = st.number_input("Quantité :", min_value=1, value=1, step=1, key=f"qte_{article_choisi}")
-                
-                with col_prix:
-                    prix_applique = st.number_input(
-                        "Prix Unitaire Appliqué (FCFA) :", 
-                        value=prix_conseille_num,
-                        step=500.0,
-                        key=f"prix_{article_choisi}"
-                    )
+                    # Extraction du prix plancher
+                    cols_plancher = [c for c in df_stock.columns if 'plan' in c.lower() or 'min' in c.lower()]
+                    if cols_plancher:
+                        raw_prix_plan = row_article[cols_plancher[0]] if pd.notna(row_article[cols_plancher[0]]) else 0
+                        prix_plan_clean = "".join(c for c in str(raw_prix_plan) if c.isdigit())
+                        prix_plancher_num = float(prix_plan_clean) if prix_plan_clean else 0.0
+                    else:
+                        prix_plancher_num = 0.0
 
-                with col_btn:
-                    st.write("")
-                    st.write("")
-                    if st.button("➕ Ajouter au Panier", use_container_width=True, key=f"btn_{article_choisi}"):
-                        if prix_plancher_num > 0 and prix_applique < prix_plancher_num:
-                            st.error(f"❌ Prix inférieur au plancher ({prix_plancher_num:,.0f} FCFA).")
-                        elif qte > stock_actuel_val:
-                            st.warning(f"⚠️ Stock insuffisant ! Disponible : {stock_actuel_val}")
-                        else:
-                            st.session_state.panier.append({
-                                "Désignation": article_choisi,
-                                "Catégorie": str(row_article['Catégorie']) if 'Catégorie' in df_stock.columns and pd.notna(row_article['Catégorie']) else "",
-                                "Quantité": int(qte),
-                                "Prix Unitaire": int(prix_applique),
-                                "Total": int(qte * prix_applique)
-                            })
-                            st.success("Article ajouté au panier !")
-                            st.rerun()
+                    # 3. Saisie Quantité, Prix et Bouton
+                    col_qte, col_prix, col_btn = st.columns([1, 1, 1])
+                    
+                    with col_qte:
+                        qte = st.number_input("Quantité :", min_value=1, value=1, step=1, key=f"qte_{article_choisi}")
+                    
+                    with col_prix:
+                        prix_applique = st.number_input(
+                            "Prix Unitaire Appliqué (FCFA) :", 
+                            value=prix_conseille_num,
+                            step=500.0,
+                            key=f"prix_{article_choisi}"
+                        )
+
+                    with col_btn:
+                        st.write("")
+                        st.write("")
+                        if st.button("➕ Ajouter au Panier", use_container_width=True, key=f"btn_{article_choisi}"):
+                            if prix_plancher_num > 0 and prix_applique < prix_plancher_num:
+                                st.error(f"❌ Prix inférieur au plancher ({prix_plancher_num:,.0f} FCFA).")
+                            elif qte > stock_actuel_val:
+                                st.warning(f"⚠️ Stock insuffisant ! Disponible : {stock_actuel_val}")
+                            else:
+                                cols_cat = [c for c in df_stock.columns if 'cat' in c.lower()]
+                                cat_val = str(row_article[cols_cat[0]]) if cols_cat and pd.notna(row_article[cols_cat[0]]) else ""
+
+                                st.session_state.panier.append({
+                                    "Désignation": article_choisi,
+                                    "Catégorie": cat_val,
+                                    "Quantité": int(qte),
+                                    "Prix Unitaire": int(prix_applique),
+                                    "Total": int(qte * prix_applique)
+                                })
+                                st.success("Article ajouté au panier !")
+                                st.rerun()
 
 # --- PARTIE DROITE : GESTION DU PANIER & VALIDATION DE LA VENTE ---
     with col_panier:
