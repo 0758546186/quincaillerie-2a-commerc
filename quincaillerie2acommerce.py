@@ -626,9 +626,7 @@ with tab1:
                                     })
                                     st.success("Article ajouté au panier !")
                                     st.rerun()
-
-    # --- GESTION DU PANIER & VALIDATION DE LA VENTE ---
-    # La section et le bouton de validation ne s'affichent QUE si le panier contient des articles
+# --- GESTION DU PANIER & VALIDATION DE LA VENTE ---
     if st.session_state.panier:
         st.markdown("---")
         st.subheader("🛒 Panier Actuel")
@@ -646,27 +644,27 @@ with tab1:
         col_val, col_vider = st.columns([2, 1])
 
         with col_val:
-            # Bouton à taille normale (use_container_width=False)
             if st.button("✅ Valider la Vente", type="primary"):
                 with st.spinner("Enregistrement de la vente et mise à jour des stocks..."):
                     nom_client_final = nom_client if nom_client.strip() else "Client Comptoir"
 
-                    # 1. Mise à jour du Catalogue
+                    # 1. Mise à jour dans Google Sheets (Catalogue + Mouvements)
                     succes = enregistrer_vente_excel(st.session_state.panier, nom_client_final)
 
-                    # 2. Reçu et nettoyage (Mouvements déjà enregistré dans la fonction)
+                    # 2. Si l'enregistrement a réussi :
                     if succes:
-                        # 3. Sauvegarde temporaire pour le Reçu
+                        # Sauvegarde temporaire pour l'impression du Reçu
                         st.session_state["derniere_vente"] = {
                             "client": nom_client_final,
                             "articles": list(st.session_state.panier),
                             "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         }
 
-                        # 4. Vidage du panier et rechargement
+                        # Vidage du panier
                         st.session_state.panier = []
-                        st.success("🎉 Vente enregistrée avec succès !")
-                        st.rerun()
+                        
+                        st.success("🎉 Vente enregistrée avec succès dans Google Sheets !")
+                        st.info("💡 Vérifiez votre onglet Mouvements sur Google Sheets !")
 
         with col_vider:
             if st.button("🗑️ Vider le panier"):
