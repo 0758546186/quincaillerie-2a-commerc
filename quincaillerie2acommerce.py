@@ -535,19 +535,36 @@ with tab1:
                             st.rerun()
 
 # --- PARTIE DROITE : GESTION DU PANIER & VALIDATION DE LA VENTE ---
-    with col_v2:
+    with col_panier:
+        st.subheader("🛒 Panier en Cours")
+        
+        if st.session_state.panier:
+            df_panier = pd.DataFrame(st.session_state.panier)
+            st.table(df_panier[["Désignation", "Quantité", "Total"]])
+            
+            total_general = df_panier["Total"].sum()
+            st.markdown(f"### **Total Général : {total_general:,} FCFA**")
+            
+            nom_client = st.text_input("Nom du Client (optionnel) :", value="Client Comptoir")
+            
+            # Définition obligatoire des deux colonnes
+            col_v1, col_v2 = st.columns(2)
+            
+            with col_v1:
+                if st.button("❌ Vider le panier"):
+                    st.session_state.panier = []
+                    st.rerun()
+                
+            with col_v2:
                 if st.button("✅ Valider la Vente", type="primary"):
                     with st.spinner("Mise à jour du Google Sheet en cours..."):
-                        # 1. Mise à jour de l'onglet Stock
+                        # 1. Mise à jour du stock
                         succes, msg = mettre_a_jour_stock_gsheet(st.session_state.panier, mode="vente")
                         
-                        # 2. Enregistrement des lignes dans l'onglet Mouvements
+                        # 2. Enregistrement dans l'onglet Mouvements
                         if succes:
                             try:
-                                # Lecture de l'onglet Mouvements existant
                                 df_mouvements = conn.read(worksheet="Mouvements", ttl=0)
-                                
-                                # Date du jour au format YYYY-MM-DD
                                 date_jour = datetime.now().strftime("%Y-%m-%d")
                                 nouvelles_lignes = []
                                 
@@ -565,15 +582,13 @@ with tab1:
                                 
                                 df_nouv = pd.DataFrame(nouvelles_lignes)
                                 df_final_mouv = pd.concat([df_mouvements, df_nouv], ignore_index=True)
-                                
-                                # Réécriture dans Google Sheets
                                 conn.update(worksheet="Mouvements", data=df_final_mouv)
                             except Exception as e_mouv:
-                                st.warning(f"Stock mis à jour, mais erreur d'enregistrement dans Mouvements : {e_mouv}")
+                                st.warning(f"Stock mis à jour, mais enregistrement Mouvements échoué : {e_mouv}")
 
                     if succes:
                         pdf_path = generer_recu_pdf(nom_client, st.session_state.panier, total_general)
-                        st.success("🎉 Vente enregistrée, Mouvements ajoutés et Stock mis à jour dans Google Sheets !")
+                        st.success("🎉 Vente enregistrée, Mouvements ajoutés et Stock mis à jour !")
                         
                         if os.path.exists(pdf_path):
                             with open(pdf_path, "rb") as file:
@@ -586,6 +601,8 @@ with tab1:
                         st.session_state.panier = []
                     else:
                         st.error(f"❌ Erreur : {msg}")
+        else:
+            st.info("Le panier est actuellement vide.")
 
 # --- ONGLET 2 : ARRIVAGES / ENTRÉES ---
 with tab2:
