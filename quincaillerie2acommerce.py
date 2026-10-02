@@ -188,9 +188,14 @@ if not df.empty and "Stock Actuel" in df.columns:
 # --- FONCTION DE GÉNÉRATION DU REÇU PDF ---
 def encode_latin1(texte):
     """Convertit les caractères accentués/spéciaux pour éviter UnicodeEncodeError dans FPDF"""
+    if texte is None:
+        return ""
     if not isinstance(texte, str):
         texte = str(texte)
+    # Remplacer les apostrophes typographiques et espaces insecables fréquents
+    texte = texte.replace("’", "'").replace("–", "-")
     return texte.encode('latin-1', 'replace').decode('latin-1')
+
 def generer_recu_pdf(nom_client, panier, total_general):
     pdf = FPDF()
     pdf.add_page()
@@ -198,43 +203,55 @@ def generer_recu_pdf(nom_client, panier, total_general):
     if os.path.exists("logo.png"):
         pdf.image("logo.png", x=10, y=8, w=30)
 
+    # Entête entreprise
     pdf.set_font("Helvetica", "B", 16)
-    pdf.cell(0, 10, "2A-COMMERCE QUINCAILLERIE", ln=True, align="C")
+    pdf.cell(0, 10, encode_latin1("2A-COMMERCE QUINCAILLERIE"), ln=True, align="C")
     pdf.set_font("Helvetica", "", 10)
-    pdf.cell(0, 6, "Vente de Matériaux de Construction & Outillage", ln=True, align="C")
-    pdf.cell(0, 6, "Angré Château — Abidjan, Côte d’Ivoire", ln=True, align="C")
+    pdf.cell(0, 6, encode_latin1("Vente de Matériaux de Construction & Outillage"), ln=True, align="C")
+    pdf.cell(0, 6, encode_latin1("Angré Château — Abidjan, Côte d'Ivoire"), ln=True, align="C")
     pdf.ln(5)
     
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
     pdf.ln(3)
+    
+    # Infos Vente & Client
     date_str = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
     pdf.set_font("Helvetica", "B", 10)
-    pdf.cell(100, 6, f"Client : {nom_client}")
-    pdf.cell(0, 6, f"Date : {date_str}", ln=True, align="R")
+    pdf.cell(100, 6, encode_latin1(f"Client : {nom_client}"))
+    pdf.cell(0, 6, encode_latin1(f"Date : {date_str}"), ln=True, align="R")
     pdf.ln(5)
     
+    # Entête du tableau
     pdf.set_fill_color(230, 230, 230)
     pdf.set_font("Helvetica", "B", 10)
-    pdf.cell(90, 8, " Article / Désignation", border=1, fill=True)
-    pdf.cell(25, 8, "Qté", border=1, align="C", fill=True)
-    pdf.cell(35, 8, "Prix Unitaire", border=1, align="R", fill=True)
-    pdf.cell(40, 8, "Total FCFA", border=1, align="R", fill=True, ln=True)
+    pdf.cell(90, 8, encode_latin1(" Article / Désignation"), border=1, fill=True)
+    pdf.cell(25, 8, encode_latin1("Qté"), border=1, align="C", fill=True)
+    pdf.cell(35, 8, encode_latin1("Prix Unitaire"), border=1, align="R", fill=True)
+    pdf.cell(40, 8, encode_latin1("Total FCFA"), border=1, align="R", fill=True, ln=True)
     
+    # Lignes du panier
     pdf.set_font("Helvetica", "", 9)
     for item in panier:
-        pdf.cell(90, 7, f" {str(item['Désignation'])[:45]}", border=1)
-        pdf.cell(25, 7, str(item['Quantité']), border=1, align="C")
-        pdf.cell(35, 7, f"{item['Prix Unitaire']:,} FCFA", border=1, align="R")
-        pdf.cell(40, 7, f"{item['Total']:,} FCFA", border=1, align="R", ln=True)
+        designation = encode_latin1(str(item.get('Désignation', item.get('article', 'Article')))[:45])
+        quantite = encode_latin1(str(item.get('Quantité', item.get('quantite', 1))))
+        prix_unitaire = encode_latin1(f"{item.get('Prix Unitaire', item.get('prix_unitaire', 0)):,} FCFA")
+        total_ligne = encode_latin1(f"{item.get('Total', item.get('total', 0)):,} FCFA")
+
+        pdf.cell(90, 7, f" {designation}", border=1)
+        pdf.cell(25, 7, quantite, border=1, align="C")
+        pdf.cell(35, 7, prix_unitaire, border=1, align="R")
+        pdf.cell(40, 7, total_ligne, border=1, align="R", ln=True)
         
+    # Total
     pdf.ln(3)
     pdf.set_font("Helvetica", "B", 12)
-    pdf.cell(150, 9, "TOTAL À PAYER : ", border=0, align="R")
-    pdf.cell(40, 9, f"{total_general:,} FCFA", border=1, align="R")
+    pdf.cell(150, 9, encode_latin1("TOTAL À PAYER : "), border=0, align="R")
+    pdf.cell(40, 9, encode_latin1(f"{total_general:,} FCFA"), border=1, align="R")
     
+    # Pied de page
     pdf.ln(15)
     pdf.set_font("Helvetica", "I", 9)
-    pdf.cell(0, 5, "Merci pour votre confiance et à bientôt !", ln=True, align="C")
+    pdf.cell(0, 5, encode_latin1("Merci pour votre confiance et à bientôt !"), ln=True, align="C")
     
     os.makedirs("factures", exist_ok=True)
     nom_fichier_pdf = f"factures/Recu_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
