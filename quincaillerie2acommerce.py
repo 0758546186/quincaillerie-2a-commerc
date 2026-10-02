@@ -29,7 +29,9 @@ else:
     st.stop()
 
 #  NOUVELLE LIGNE (qui charge vos secrets de compte de service)
-conn = st.connection("gsheets", type="gsheets")
+from streamlit_gsheets import GSheetsConnection
+
+conn = st.connection("gsheets", type=GSheetsConnection)
 
 # --- FONCTION DE CHARGEMENT DES DONNÉES DEPUIS GOOGLE SHEETS ---
 @st.cache_data(ttl=60)
