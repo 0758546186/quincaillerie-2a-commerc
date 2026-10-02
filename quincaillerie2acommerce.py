@@ -630,7 +630,6 @@ with tab1:
                     with st.spinner("Mise à jour du Google Sheet en cours..."):
                         # 1. Mise à jour du stock
                         succes, msg = mettre_a_jour_stock_gsheet(st.session_state.panier, mode="vente")
-                        
 # 2. Enregistrement dans l'onglet Mouvements
                         if succes:
                             try:
@@ -665,13 +664,13 @@ with tab1:
                                 
                                 df_nouv = pd.DataFrame(nouvelles_lignes)
                                 
-                                # Fusion, nettoyage des colonnes vides et replacement des NaN par ""
+                                # Fusion et nettoyage des colonnes vides / NaN
                                 df_final_mouv = pd.concat([df_mouvements, df_nouv], ignore_index=True)
                                 df_final_mouv = df_final_mouv.dropna(how="all", axis=1)
                                 df_final_mouv = df_final_mouv.fillna("")
                                 
-                                # Envoi à Google Sheets avec l'argument 'position' au lieu de 'range'
-                                conn.update(worksheet="Mouvements", data=df_final_mouv, position="A3")
+                                # Envoi propre sans arguments invalides
+                                conn.update(worksheet="Mouvements", data=df_final_mouv)
                             except Exception as e_mouv:
                                 st.warning(f"Stock mis à jour, mais enregistrement Mouvements échoué : {e_mouv}")
 # --- ONGLET 2 : ARRIVAGES / ENTRÉES ---
