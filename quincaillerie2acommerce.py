@@ -534,8 +534,8 @@ with tab1:
                             st.success("Article ajouté au panier !")
                             st.rerun()
 
-
-with col_v2:
+# --- PARTIE DROITE : GESTION DU PANIER & VALIDATION DE LA VENTE ---
+    with col_v2:
                 if st.button("✅ Valider la Vente", type="primary"):
                     with st.spinner("Mise à jour du Google Sheet en cours..."):
                         # 1. Mise à jour de l'onglet Stock
